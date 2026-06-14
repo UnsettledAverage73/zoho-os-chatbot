@@ -7,7 +7,6 @@ serial.log
 
 # Logs and debug output
 *.log
-*.txt
 qemu_output.log
 stdout.log
 zoho_shell.log
