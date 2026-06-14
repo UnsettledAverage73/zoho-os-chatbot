@@ -15,7 +15,7 @@ except ImportError:  # pragma: no cover - fallback for direct script execution
 
 
 APP_TITLE = "Zoho OS Repo Chat"
-DEFAULT_MODEL = "llama-3.1-70b-versatile"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
 SYSTEM_PROMPT = """You are a repository-aware assistant for the Zoho OS project.
