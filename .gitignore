@@ -1,0 +1,31 @@
+*.o
+kernel.bin
+zoho_os.iso
+isodir/
+hdd.img
+serial.log
+
+# Logs and debug output
+*.log
+*.txt
+qemu_output.log
+stdout.log
+zoho_shell.log
+
+# LaTeX artifacts
+*.aux
+*.out
+*.toc
+*.pdf
+episode_*
+
+# Web docs artifacts
+docs-site/node_modules/
+docs-site/.docusaurus/
+docs-site/build/
+
+# Temp files
+*.tx
+phase*
+.agents/
+.codex/

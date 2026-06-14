@@ -1,0 +1,131 @@
+---
+id: core-02-pmm
+title: "Chapter 3: Physical Memory Manager"
+slug: /core/02-pmm
+sidebar_position: 7
+---
+
+# Physical Memory Manager
+
+The PMM tracks which physical 4 KiB frames are free, used, or reserved.
+
+## Q&A
+
+**Q: What problem does the PMM solve?**  
+A: It prevents the kernel from handing out the same physical frame twice.
+
+**Q: Why use frames instead of raw bytes?**  
+A: Because paging and allocation operate in page-sized chunks.
+
+**Q: Why does the kernel need refcounts?**  
+A: To know when a shared frame can safely be released.
+
+## Simple example
+
+Imagine a warehouse full of numbered boxes.
+
+- each box is a 4 KiB frame
+- some boxes are already reserved for the kernel
+- some boxes are available for allocation
+- the PMM is the inventory list
+
+If the inventory is wrong, the kernel starts handing out boxes that are already in use.
+
+## What this project does
+
+`pmm_init()`:
+
+- reads the Multiboot memory map
+- marks usable memory as free
+- reserves the kernel image and multiboot info pages
+- builds a free-frame stack
+- tracks frame reference counts
+
+The allocator itself is simple:
+
+- `pmm_alloc_frame()` pops a free frame
+- `pmm_free_frame()` returns a frame when the refcount reaches zero
+
+## Real code reference
+
+- `src/kernel/mm/pmm.c`
+
+## Diagram
+
+```text
+multiboot memory map
+  -> usable frames
+  -> bitmap/free stack
+  -> alloc/free/refcount operations
+```
+
+## Small code map
+
+- `pmm_init()` parses memory maps and initializes the allocator.
+- `pmm_alloc_frame()` returns one free frame.
+- `pmm_free_frame()` decrements refcounts and returns frames to the pool.
+- `pmm_ref_inc()` records shared ownership.
+- `pmm_get_free_count()` reports the current free-frame count.
+
+## Why this matters
+
+Everything in the kernel depends on the PMM:
+
+- page tables need physical frames
+- kernel heap structures need memory
+- user-space address spaces need pages
+- CoW page splits need new frames
+
+## Practical example
+
+If the kernel wants to map a new user page:
+
+1. PMM provides a free frame
+2. VMM maps it into the address space
+3. the process can now access that page
+
+## What can go wrong
+
+- marking reserved memory as free can corrupt the kernel
+- running out of frames can stop VMM growth
+- incorrect refcounts can free live memory
+
+## Practical takeaway
+
+The PMM is the kernel's physical stockroom. It answers one question: which frames can I safely use right now?
+
+## Line by line example
+
+```c
+for (tag = (struct multiboot_tag*)mb_info->tags;
+     tag->type != MULTIBOOT_TAG_TYPE_END;
+     tag = (struct multiboot_tag*)((uint8_t*)tag + ((tag->size + 7) & ~7))) {
+```
+
+- walk through all Multiboot tags.
+- stop when the end tag is reached.
+- keep each tag 8-byte aligned.
+
+```c
+if (entry->type == 1) {
+```
+
+- only mark memory regions as free if the firmware says they are usable.
+
+```c
+bitmap_unset(frame);
+```
+
+- mark that frame as available in the bitmap.
+
+```c
+free_stack[++stack_ptr] = f * PAGE_SIZE;
+```
+
+- store the free frame address on the allocator stack.
+
+```c
+ref_counts[addr / PAGE_SIZE] = 1;
+```
+
+- start the reference count for an allocated frame.

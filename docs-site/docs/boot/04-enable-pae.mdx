@@ -1,0 +1,72 @@
+---
+id: boot-04-enable-pae
+title: "Step 3: Enable PAE"
+slug: /boot/04-enable-pae
+sidebar_position: 5
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 3: Enable PAE
+
+Long mode depends on PAE. Before 64-bit paging can become active, the boot code must set `CR4.PAE`.
+
+<BootstrapStepFrame step={3} title="Step 3 visualizer" />
+
+## Q&A
+
+**Q: What is PAE?**  
+A: Physical Address Extension. It is the mode that allows the CPU to use the long-mode paging structures.
+
+**Q: Why do we set it before paging?**  
+A: Because the hardware requires it before long mode can activate.
+
+**Q: Is PAE the same as long mode?**  
+A: No. PAE is a prerequisite, not the final 64-bit execution state.
+
+## Simple example
+
+Think of PAE as widening the road before a larger vehicle can enter.
+
+- the CPU can only use long mode paging after PAE is enabled
+- without that road, the later long mode configuration has nowhere to go
+
+You do not get 64-bit execution just because you flipped a single bit. PAE is only one prerequisite in the chain.
+
+## Why the project checks it early
+
+This is a common failure point because the kernel can appear to run a little further and then fail during the paging transition. Checking it early makes debugging much easier.
+
+## Real code reference
+
+`src/boot/main.asm` performs the change during `enable_paging`:
+
+```asm
+mov eax, cr4
+or eax, 1 << 5
+mov cr4, eax
+```
+
+### Line by line
+
+- `mov eax, cr4` reads the current control register value.
+- `or eax, 1 << 5` turns on bit 5, which is `CR4.PAE`.
+- `mov cr4, eax` writes the updated value back into the CPU.
+
+Document this step separately because it is one of the easiest places to make the boot sequence fail silently.
+
+## Practical takeaway
+
+If this step is skipped, long mode activation later in the sequence will not work correctly.
+
+## Line by line example
+
+```asm
+mov eax, cr4
+or eax, 1 << 5
+mov cr4, eax
+```
+
+- `mov eax, cr4` copies the current `CR4` value into a general-purpose register.
+- `or eax, 1 << 5` sets bit 5, which is the PAE bit.
+- `mov cr4, eax` writes the modified control register back to the CPU.

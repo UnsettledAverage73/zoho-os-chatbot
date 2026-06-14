@@ -1,0 +1,120 @@
+---
+id: architecture
+title: Kernel Architecture
+slug: /architecture
+sidebar_position: 4
+---
+
+# Kernel Architecture
+
+This page gives the system-level map of the project after boot.
+
+## 1. Boot layer
+
+The boot path prepares the processor and reaches the C kernel entry.
+
+- `src/boot/header.asm` provides the Multiboot2 header
+- `src/boot/main.asm` sets up stack, paging, and the long mode transition
+- `src/boot/long_mode_init.asm` enters 64-bit mode and calls `kmain()`
+
+## 2. Core kernel layer
+
+The core kernel initializes the runtime environment:
+
+- logging
+- CPU state
+- memory managers
+- timers
+- task scheduling
+- syscalls
+- device discovery
+- storage and network bring-up
+
+The main entry is `src/kernel/core/main.c`.
+
+## 3. Memory layer
+
+The memory subsystem is split into two parts.
+
+### Physical memory manager
+
+`src/kernel/mm/pmm.c`:
+
+- reads the Multiboot memory map
+- marks usable frames free
+- reserves kernel and boot information memory
+- allocates and frees physical frames
+
+### Virtual memory manager
+
+`src/kernel/mm/vmm.c`:
+
+- reads the active page table root
+- creates new address spaces
+- maps and unmaps pages
+- supports huge pages and copy-on-write logic
+
+## 4. Scheduling and SMP
+
+The kernel supports multiple CPUs.
+
+- `src/kernel/core/task.c` creates and schedules tasks
+- `src/kernel/arch/x86_64/smp.c` starts application processors
+- `src/kernel/arch/x86_64/trampoline.asm` is the AP startup code
+
+The design uses per-CPU runqueues and a simple load-balancing approach.
+
+## 5. Device and I/O layer
+
+The project includes drivers for:
+
+- serial output
+- VGA / framebuffer graphics
+- keyboard and mouse
+- PCI discovery
+- ATA storage
+- xHCI USB
+- E1000 networking
+
+These live under `src/kernel/drivers/`.
+
+## 6. Filesystem and user space
+
+The kernel supports:
+
+- TAR ramdisk access
+- ext2 support
+- VFS abstractions
+- a shell launched as a user-space task
+
+The user shell is in `src/apps/shell/main.c`.
+
+## 7. Syscall bridge
+
+`src/kernel/core/syscall.c` exposes kernel services to user programs:
+
+- file operations
+- process control
+- memory mapping
+- system info
+- window operations
+- task execution
+
+## One-line summary
+
+`Boot -> memory -> interrupts -> tasks -> drivers -> shell`
+
+## Next chapters
+
+If you want the deeper system walk-through after this page, read:
+
+1. [GDT and TSS](/core/00-gdt-tss)
+2. [IDT and interrupts](/core/01-idt-interrupts)
+3. [PMM and VMM](/core/02-pmm)
+4. [Tasking and SMP](/core/04-tasking-smp)
+5. [Syscalls and user space](/core/05-syscalls-userspace)
+6. [Filesystems and shell](/core/06-filesystems-shell)
+7. [Graphics and window manager](/core/07-graphics-window)
+8. [PCI and storage](/core/08-pci-storage)
+9. [Networking](/core/09-networking)
+10. [Shell internals](/core/10-shell-internals)

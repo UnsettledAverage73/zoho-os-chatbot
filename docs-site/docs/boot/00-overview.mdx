@@ -1,0 +1,86 @@
+---
+id: boot-00-overview
+title: Boot Sequence Overview
+slug: /boot/00-overview
+sidebar_position: 1
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Boot Sequence Overview
+
+This section explains how Zoho OS gets from GRUB's 32-bit entry environment to the 64-bit kernel entry in `kmain()`.
+
+The visualizer below is the same walkthrough you already created, now embedded into the docs so each page can focus on a specific phase.
+
+<BootstrapStepFrame step={0} title="Boot sequence visualizer" />
+
+## Q&A
+
+**Q: What is the boot sequence?**  
+A: It is the ordered path from power-on firmware to the kernel's first C function.
+
+**Q: Why is it split into steps?**  
+A: Because each hardware state change depends on the previous one. If the order breaks, the CPU faults or resets.
+
+**Q: What is the end goal?**  
+A: Reach `kmain()` in 64-bit mode with paging, memory info, and a valid stack.
+
+## Why this sequence exists
+
+An x86_64 kernel cannot start directly as a normal C program. Before `kmain()` can run, the CPU must be in the right mode, the memory map must exist, and the kernel must have a valid stack.
+
+Think of booting like moving from a temporary workspace into a fully prepared office:
+
+- GRUB gives you the room keys
+- the bootstrap code sets up the desk, floor plan, and lighting
+- the 64-bit entry code opens the office for normal work
+
+## Diagram
+
+```text
+Power on
+  -> BIOS / UEFI
+  -> GRUB
+  -> Multiboot2 handoff
+  -> 32-bit bootstrap
+  -> PAE + paging setup
+  -> 64-bit entry
+  -> kmain()
+```
+
+## Source files
+
+- `src/boot/header.asm`
+- `src/boot/main.asm`
+- `src/boot/long_mode_init.asm`
+- `src/kernel/core/main.c`
+
+## Step map
+
+1. GRUB handoff
+2. Multiboot2 header
+3. Entry point and stack
+4. Enable PAE
+5. Load page tables into `CR3`
+6. Set `EFER.LME`
+7. Enable paging in `CR0`
+8. Load the 64-bit GDT and far jump
+9. Run 64-bit entry code and call `kmain()`
+
+## What to expect in the next pages
+
+Each step page answers three questions:
+
+1. What does this step do?
+2. Why is it necessary?
+3. What happens if it is wrong?
+
+## How to read these pages
+
+When you see a code block:
+
+- first read the plain-language explanation above it
+- then look at the line-by-line notes
+- then compare it back to the source file
+- finally ask what the CPU state is before and after the step

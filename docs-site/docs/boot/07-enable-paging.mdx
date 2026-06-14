@@ -1,0 +1,71 @@
+---
+id: boot-07-enable-paging
+title: "Step 6: Enable Paging"
+slug: /boot/07-enable-paging
+sidebar_position: 8
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 6: Enable Paging
+
+The actual transition becomes live when paging is enabled with the prepared page tables and `EFER.LME` already set.
+
+<BootstrapStepFrame step={6} title="Step 6 visualizer" />
+
+## Q&A
+
+**Q: What happens when paging turns on?**  
+A: The CPU starts translating virtual addresses through the page tables.
+
+**Q: Why is this moment sensitive?**  
+A: Because any missing or broken mapping can cause an immediate fault.
+
+**Q: Is paging the same as memory protection?**  
+A: Not exactly. Paging is the translation mechanism that also enables protection.
+
+## Simple example
+
+If `CR3` is the map book and `EFER.LME` is the “64-bit allowed” switch, then `CR0.PG` is the moment the CPU starts using that map for every memory access.
+
+This is the most sensitive moment in the boot path because the processor stops treating addresses as simple physical locations.
+
+## Why identity mapping matters here
+
+Before this moment, the bootstrap code has been running with linear addressing that still behaves like the old environment. After this point, every fetch and data access is translated through the page tables.
+
+If the current code is not mapped correctly, the CPU can fault immediately.
+
+## Real code reference
+
+`src/boot/main.asm` sets `CR0.PG`:
+
+```asm
+mov eax, cr0
+or eax, 1 << 31
+mov cr0, eax
+```
+
+### Line by line
+
+- `mov eax, cr0` reads the control register.
+- `or eax, 1 << 31` sets the paging bit.
+- `mov cr0, eax` activates paging immediately.
+
+From here, the system is in the sensitive part of the transition. A wrong page table pointer or broken mapping usually means an immediate reset or triple fault.
+
+## Practical takeaway
+
+Paging does not just “turn on memory protection.” It changes how the CPU interprets every address.
+
+## Line by line example
+
+```asm
+mov eax, cr0
+or eax, 1 << 31
+mov cr0, eax
+```
+
+- `mov eax, cr0` reads the current control register state.
+- `or eax, 1 << 31` sets the paging bit.
+- `mov cr0, eax` turns paging on immediately.

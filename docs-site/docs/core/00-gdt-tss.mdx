@@ -1,0 +1,115 @@
+---
+id: core-00-gdt-tss
+title: "Chapter 1: GDT and TSS"
+slug: /core/00-gdt-tss
+sidebar_position: 5
+---
+
+# GDT and TSS
+
+After the CPU enters long mode, the kernel still needs a correct segmentation setup and a task-state structure for privilege transitions.
+
+## Q&A
+
+**Q: Why is the GDT still needed in long mode?**  
+A: The CPU still uses it for code/data descriptors and privilege transitions.
+
+**Q: Why does the TSS matter if the OS is not doing old-style task switching?**  
+A: Because it provides the kernel stack for transitions from user mode.
+
+## Simple example
+
+Think of the GDT as the building's access badge system.
+
+- kernel code gets one badge
+- user code gets another badge
+- the TSS stores the emergency kernel stack to use when control moves from user mode to kernel mode
+
+The CPU needs both pieces before it can safely switch between ring 0 and ring 3.
+
+## What the GDT does
+
+In this project, the GDT defines:
+
+- kernel code segment
+- kernel data segment
+- user data segment
+- user code segment
+- TSS descriptor
+
+## What the TSS does
+
+The TSS is not used here as a task switcher. It is used mainly for:
+
+- `rsp0`, the kernel stack to load during interrupts or syscalls from user mode
+- `iopb_offset`, which controls I/O permission behavior
+
+## Real code reference
+
+- `include/kernel/arch/x86_64/gdt.h`
+- `src/kernel/arch/x86_64/gdt.c`
+
+`gdt_init()` builds the per-CPU GDT, sets the TSS, loads it, and then loads the task register.
+
+## Diagram
+
+```text
+GDT
+  -> kernel code
+  -> kernel data
+  -> user code
+  -> user data
+  -> TSS
+```
+
+## Small code map
+
+- `gdt_set_entry()` writes one descriptor into the GDT.
+- `gdt_set_tss()` writes the 64-bit TSS descriptor.
+- `tss_set_rsp0()` updates the kernel stack used on privilege entry.
+- `gdt_init()` installs everything for the current CPU.
+
+## Why this matters
+
+Without a valid GDT and TSS:
+
+- user mode transitions become unsafe
+- interrupts from ring 3 may not have a valid kernel stack
+- syscalls and fault handling can become unreliable
+
+## Practical takeaway
+
+The boot sequence gets the CPU into 64-bit mode, but the GDT/TSS setup is what makes privilege transitions usable.
+
+## Line by line example
+
+```c
+cpu->gdt_ptr.limit = sizeof(cpu->gdt) - 1;
+cpu->gdt_ptr.base = (uint64_t)&cpu->gdt;
+```
+
+- define the `lgdt` pointer.
+- the limit is the size minus one, as required by the instruction.
+- the base is the address of the current CPU's GDT.
+
+```c
+gdt_set_entry(cpu, 1, 0, 0xFFFFFFFF, 0x9A, 0xAF);
+```
+
+- fill entry 1 with the kernel code segment.
+- `0x9A` means present, executable, readable.
+- `0xAF` carries the long-mode granularity flags.
+
+```c
+cpu->tss_entry.iopb_offset = sizeof(struct tss_entry);
+```
+
+- place the I/O permission bitmap past the end of the TSS so it is effectively disabled.
+
+```c
+gdt_load(&cpu->gdt_ptr);
+tss_load();
+```
+
+- load the new table into the CPU.
+- activate the task register so the TSS becomes live.

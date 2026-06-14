@@ -1,0 +1,80 @@
+---
+id: boot-03-entry-stack
+title: "Step 2: Entry Point and Stack"
+slug: /boot/03-entry-stack
+sidebar_position: 4
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 2: Entry Point and Stack
+
+The first operational requirement is a valid stack. Without it, any `call`, interrupt, or fault path can immediately corrupt memory or crash the system.
+
+<BootstrapStepFrame step={2} title="Step 2 visualizer" />
+
+## Q&A
+
+**Q: Why does the kernel need a stack before anything else?**  
+A: Because function calls, returns, and saved registers all rely on it.
+
+**Q: Why store the GRUB registers so early?**  
+A: Because later calls can overwrite `EAX` and `EBX`.
+
+**Q: What is the bootstrap stack used for?**  
+A: Temporary work during 32-bit setup before the 64-bit environment is ready.
+
+## Simple example
+
+If the CPU were a person, the stack would be the notebook on the desk.
+
+- every function call writes to it
+- every return reads from it
+- temporary values often live on it
+
+Without a notebook, the person can still think, but they have nowhere safe to record the work. The CPU needs that notebook before the bootstrap code can use `call` instructions safely.
+
+## What the stack is used for here
+
+- temporary function calls
+- return addresses
+- small local storage during bootstrap
+- safe execution of helper routines like serial setup
+
+## Diagram
+
+```text
+start:
+  cli
+  esp -> bootstrap stack
+  save EAX/EBX
+  call helpers
+```
+
+## Why the boot code saves GRUB values immediately
+
+The GRUB-provided registers are part of the handoff contract, but later function calls can overwrite them. Saving them into general-purpose registers early protects the data.
+
+In this repository:
+
+- `EAX` contains the Multiboot2 magic
+- `EBX` contains the Multiboot info pointer
+- the code copies them before further work begins
+
+## Real code reference
+
+In `src/boot/main.asm`:
+
+```asm
+start:
+    mov esp, stack_top
+    mov esi, ebx
+```
+
+The boot code stores the Multiboot info pointer and points `ESP` at the bootstrap stack allocated in `.bss`.
+
+## What can go wrong
+
+- no stack means `call` and `ret` become unsafe
+- bad stack location can overwrite code or data
+- saving GRUB registers too late can lose the boot information

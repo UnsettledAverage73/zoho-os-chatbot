@@ -1,0 +1,108 @@
+---
+id: boot-02-multiboot-header
+title: "Step 1: Multiboot2 Header"
+slug: /boot/02-multiboot-header
+sidebar_position: 3
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 1: Multiboot2 Header
+
+The Multiboot2 header is how GRUB recognizes the kernel as bootable. If the header is missing, malformed, or placed incorrectly, GRUB will reject the binary before your code ever runs.
+
+<BootstrapStepFrame step={1} title="Step 1 visualizer" />
+
+## Q&A
+
+**Q: Why do we need a Multiboot2 header?**  
+A: So GRUB can identify the kernel, verify it, and pass control to it.
+
+**Q: Is this header code or data?**  
+A: It is data placed in a special section that GRUB scans.
+
+**Q: Does the kernel run without it?**  
+A: Not through GRUB. GRUB will refuse to boot the binary.
+
+## Simple example
+
+Think of this as a boarding pass.
+
+- if the ticket is valid, the gate lets you board
+- if the ticket is wrong, the gate rejects you immediately
+
+The Multiboot2 header is the ticket that tells GRUB this binary is a kernel it can load.
+
+## What the header contains
+
+The header in this project includes:
+
+- a Multiboot2 magic number
+- architecture information
+- the total header length
+- a checksum
+- an end tag
+
+## Diagram
+
+```text
+kernel.bin
+  -> .multiboot_header section
+  -> GRUB scans header
+  -> checksum + tags validated
+  -> kernel accepted
+```
+
+## Why the checksum matters
+
+The checksum is not decoration. It is the quick integrity check that helps GRUB confirm the header is valid.
+
+For example:
+
+- if you change the magic value accidentally
+- or place the header in the wrong section
+- or break the checksum calculation
+
+GRUB will usually stop before reaching your assembly entry point.
+
+## Real code reference
+
+`src/boot/header.asm` defines:
+
+- The Multiboot2 magic value
+- Architecture field
+- Header length
+- Header checksum
+- End tag
+
+This is the first boot artifact worth documenting because it is a fixed contract between GRUB and the kernel image.
+
+## Practical takeaway
+
+This is the minimum thing that makes the kernel bootable from GRUB. Without it, nothing later in the boot chain matters.
+
+## Line by line example
+
+```asm
+section .multiboot_header
+header_start:
+    dd 0xe85250d6
+    dd 0
+    dd header_end - header_start
+    dd 0x100000000 - (0xe85250d6 + 0 + (header_end - header_start))
+    align 8
+    dw 0
+    dw 0
+    dd 8
+header_end:
+```
+
+- `section .multiboot_header` places the header in a dedicated section.
+- `header_start:` marks the beginning for the checksum calculation.
+- `dd 0xe85250d6` writes the Multiboot2 magic number.
+- `dd 0` says the target architecture is protected-mode i386 for the boot handoff.
+- `dd header_end - header_start` stores the total header size.
+- `dd ...checksum...` makes the header sum to zero modulo 2^32.
+- `align 8` keeps the following tags 8-byte aligned.
+- `dw 0`, `dw 0`, `dd 8` write the required end tag.
+- `header_end:` marks the end of the header block.

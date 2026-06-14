@@ -1,0 +1,125 @@
+---
+id: core-01-idt-interrupts
+title: "Chapter 2: IDT and Interrupts"
+slug: /core/01-idt-interrupts
+sidebar_position: 6
+---
+
+# IDT and Interrupts
+
+The IDT is the kernel's interrupt routing table. It tells the CPU where to go when something happens: a timer tick, a keyboard press, a page fault, or a general protection fault.
+
+## Q&A
+
+**Q: What is an interrupt vector?**  
+A: A number the CPU uses to select the correct handler entry in the IDT.
+
+**Q: Why does the kernel remap the PIC?**  
+A: To move hardware IRQs away from CPU exception vectors.
+
+**Q: Why are interrupts important after boot?**  
+A: They drive timers, input, faults, and scheduler preemption.
+
+## Simple example
+
+Imagine a receptionist desk with 256 labeled drawers.
+
+- each drawer corresponds to one interrupt vector
+- when an event arrives, the CPU opens the matching drawer
+- the drawer contains the handler address
+
+If a drawer is missing or wrong, the CPU has nowhere correct to jump.
+
+## What this project does
+
+The kernel:
+
+- creates an IDT with 256 entries
+- remaps the legacy PIC away from the CPU exception range
+- installs ISR stubs for exceptions and IRQs
+- loads the IDT with `lidt`
+
+## Real code reference
+
+- `src/kernel/arch/x86_64/idt.c`
+
+The page-fault handler in `idt.c` is especially important because it can:
+
+- log the fault address
+- handle copy-on-write pages
+- terminate a user process on invalid access
+
+## Diagram
+
+```text
+event -> vector number -> IDT entry -> ISR stub -> C handler
+```
+
+## Small code map
+
+- `pic_remap()` moves IRQ vectors.
+- `idt_set_gate()` writes one IDT entry.
+- `idt_init_global()` installs handlers.
+- `isr_handler()` handles exceptions and IRQs in C.
+- `handle_page_fault()` resolves CoW or kills invalid user access.
+
+## Why the PIC remap matters
+
+The old PIC interrupt numbers overlap with CPU exceptions by default. That is a problem because:
+
+- exception vectors 0-31 are reserved by the CPU
+- hardware IRQs must not collide with them
+
+So the kernel moves the PIC interrupts to a safer vector range.
+
+## What happens on failure
+
+If the IDT is wrong:
+
+- exceptions can triple-fault the machine
+- keyboard and timer interrupts may never arrive
+- user process faults may crash the whole system instead of just the process
+
+## Practical takeaway
+
+The IDT is the kernel's emergency route map. It is what makes exceptions and hardware interrupts manageable instead of fatal.
+
+## Line by line example
+
+```c
+idt_p.limit = (sizeof(struct idt_entry) * 256) - 1;
+idt_p.base = (uint64_t)&idt;
+```
+
+- prepare the descriptor for `lidt`.
+- the CPU needs both the size and base address.
+
+```c
+outb(0x20, 0x11);
+outb(0xA0, 0x11);
+```
+
+- start PIC initialization on master and slave controllers.
+
+```c
+idt_set_gate(i, (uint64_t)isrs[i], 0x08, 0x8E);
+```
+
+- install one interrupt handler.
+- `0x08` selects the kernel code segment.
+- `0x8E` means present interrupt gate, ring 0.
+
+```c
+if (frame->int_no == 14) {
+    uint64_t ret = handle_page_fault(frame);
+```
+
+- page faults get special handling because many are recoverable.
+
+```c
+task_exit_current(-11);
+return task_schedule(rsp);
+```
+
+- terminate a bad user process.
+- switch to another runnable task instead of panicking the kernel.

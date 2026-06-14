@@ -1,0 +1,131 @@
+---
+id: core-05-syscalls-userspace
+title: "Chapter 6: Syscalls and User Space"
+slug: /core/05-syscalls-userspace
+sidebar_position: 10
+---
+
+# Syscalls and User Space
+
+System calls are the boundary between user programs and the kernel.
+
+## Q&A
+
+**Q: Why do user programs need syscalls?**  
+A: Because they need a safe way to ask the kernel to perform privileged work.
+
+**Q: What is the syscall entry point?**  
+A: The assembly target configured in `syscall_init()`.
+
+**Q: What kind of work can user space request here?**  
+A: Files, processes, windows, stats, task lists, and memory mappings.
+
+## Simple example
+
+Think of syscalls as a service counter.
+
+- user space is the customer area
+- kernel space is the back office
+- a syscall is the request slip passed over the counter
+
+The user program cannot directly touch kernel internals; it asks the kernel to do the work.
+
+## What this project does
+
+`syscall_init()`:
+
+- enables the syscall mechanism through MSRs
+- sets the syscall entry point
+- configures the kernel/user code segment selectors
+- installs the syscall ABI setup
+
+`syscall_handler_c()` exposes services such as:
+
+- open, read, write, close
+- exec
+- yield
+- fork
+- get system info
+- get task list
+- create windows
+- query kernel stats and trace data
+
+## Real code reference
+
+- `src/kernel/core/syscall.c`
+- `src/apps/shell/main.c`
+
+## Why it matters
+
+Without syscalls, user space would be isolated but useless. With syscalls, user programs can:
+
+- read input
+- print output
+- launch new programs
+- inspect system state
+- interact with windows and files
+
+## Practical example
+
+The shell uses syscalls to:
+
+1. read a command
+2. parse it into arguments
+3. call `sys_exec()` or a built-in handler
+4. display the result back to the user
+
+## Diagram
+
+```text
+user program -> syscall -> kernel handler -> service -> return value
+```
+
+## Small code map
+
+- `syscall_init()` enables the syscall path and sets MSRs.
+- `syscall_handler_c()` routes each syscall number.
+- `sys_open()/sys_read()/sys_write()` expose file operations.
+- `sys_exec()` starts another program.
+- `sys_get_sys_info()` reports kernel state to user space.
+
+## What can go wrong
+
+- wrong MSR setup can break syscall entry
+- wrong privilege selectors can trap into faults
+- a bad syscall ABI can corrupt arguments or return values
+
+## Practical takeaway
+
+Syscalls are the official doorway from user space into the kernel.
+
+## Line by line example
+
+```c
+wrmsr(MSR_LSTAR, (uint64_t)syscall_entry);
+```
+
+- tell the CPU where to jump when a syscall happens.
+
+```c
+case 8: ret = sys_exec((const char*)arg1); break;
+```
+
+- syscall number 8 launches a program.
+
+```c
+case 11: ret = sys_get_sys_info((sys_info_t*)arg1); break;
+```
+
+- syscall number 11 returns system statistics.
+
+```c
+case 14: ret = sys_get_kstats((kernel_stats_t*)arg1); break;
+```
+
+- syscall number 14 returns kernel performance counters.
+
+```c
+syscall_handler_c(uint64_t num, uint64_t arg1, ... )
+```
+
+- route the syscall number to the correct kernel service.

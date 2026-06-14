@@ -1,0 +1,66 @@
+---
+id: boot-10-common-failures
+title: "Step 9: Common Failures"
+slug: /boot/10-common-failures
+sidebar_position: 11
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 9: Common Failures
+
+The visualizer already includes a failure catalogue, so this page becomes the natural place to collect debugging notes as the docs grow.
+
+<BootstrapStepFrame step={9} title="Common failures visualizer" />
+
+## Q&A
+
+**Q: Why do boot bugs look like freezes instead of error messages?**  
+A: Because the kernel may crash before normal logging is alive.
+
+**Q: What is the first thing to check when GRUB refuses to boot?**  
+A: The Multiboot2 header and checksum.
+
+**Q: What is the first thing to check when the machine resets after paging?**  
+A: `CR3`, identity mapping, and the long-mode enable sequence.
+
+## Why this page matters
+
+Boot failures are often silent. A wrong value in the boot path usually means the machine resets, freezes, or triple-faults before you get a normal error message.
+
+That means debugging early boot is mostly about understanding which step failed and what state the CPU had just before it failed.
+
+## Initial failure cases to document
+
+- Wrong Multiboot header layout or checksum
+- Missing or invalid stack setup
+- Bad `CR3` physical address
+- Missing `CR4.PAE`
+- Broken `EFER.LME` sequence
+- Missing far jump after loading the 64-bit GDT
+- Incorrect instruction encoding at the 64-bit entry point
+
+## Quick debugging examples
+
+- If GRUB says the kernel is not bootable, check the Multiboot2 header first.
+- If the system hangs before `kmain()`, check the stack and paging transition.
+- If the machine resets right after paging is enabled, check the identity map and `CR3`.
+- If long mode never starts, check `PAE`, `EFER.LME`, and the far jump sequence.
+
+## Simple takeaway
+
+Early boot bugs are almost always state bugs:
+
+- wrong register
+- wrong table
+- wrong order
+- wrong mapping
+
+## Debug path
+
+If the failure happens:
+
+1. before GRUB hands off, inspect the ISO and `grub.cfg`
+2. right after `start`, inspect the stack and Multiboot registers
+3. during paging setup, inspect `CR3`, PAE, and identity maps
+4. after the far jump, inspect the 64-bit stub and `kmain()`

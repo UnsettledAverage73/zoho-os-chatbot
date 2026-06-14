@@ -1,0 +1,74 @@
+---
+id: boot-05-page-tables-cr3
+title: "Step 4: Page Tables and CR3"
+slug: /boot/05-page-tables-cr3
+sidebar_position: 6
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 4: Page Tables and CR3
+
+Before paging is enabled, the processor needs a valid top-level page table and `CR3` must point to it. In this kernel, the bootstrap code builds an identity-mapped region so execution can continue cleanly across the mode switch.
+
+<BootstrapStepFrame step={4} title="Step 4 visualizer" />
+
+## Q&A
+
+**Q: What does `CR3` hold?**  
+A: The physical address of the top-level page table, which is the PML4 in x86_64.
+
+**Q: Why does this project use identity mapping during bootstrap?**  
+A: So the CPU can keep executing the same code addresses after paging turns on.
+
+**Q: Why are huge pages used here?**  
+A: They simplify the bootstrap mapping and reduce the number of page-table entries required.
+
+## Simple example
+
+Imagine a city map:
+
+- each physical address is a building
+- each virtual address is a street name
+- the page tables are the map book that tells the CPU where everything is
+
+If the map says “street A is building B,” the CPU can translate addresses correctly. `CR3` tells the CPU where the top of that map book lives.
+
+## Why identity mapping is used
+
+The bootstrap code wants the CPU to keep executing the same instructions after paging turns on. Identity mapping makes that possible because the virtual addresses match the physical ones during the transition.
+
+That is why the kernel can turn paging on without suddenly losing track of where the next instruction lives.
+
+## Diagram
+
+```text
+PML4
+  -> PDPT
+      -> PD
+          -> PT
+              -> physical frames
+```
+
+## Real code reference
+
+`src/boot/main.asm`:
+
+- Builds `p4_table`, `p3_table`, and `p2_table`
+- Maps 2 MiB huge pages
+- Loads `p4_table` into `CR3`
+
+### Line by line idea
+
+- `p4_table` is the root page table.
+- `p3_table` entries point to the page directories.
+- `p2_table` entries map 2 MiB chunks of low memory.
+- `mov cr3, eax` tells the CPU which page table tree to use.
+
+That setup is the minimum paging environment needed for the transition to long mode.
+
+## What can go wrong
+
+- wrong `CR3` value points the CPU at garbage
+- missing identity mapping causes an immediate fault after paging turns on
+- bad huge-page setup can make the address translation inconsistent

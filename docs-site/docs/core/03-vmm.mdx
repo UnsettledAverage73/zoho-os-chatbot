@@ -1,0 +1,128 @@
+---
+id: core-03-vmm
+title: "Chapter 4: Virtual Memory Manager"
+slug: /core/03-vmm
+sidebar_position: 8
+---
+
+# Virtual Memory Manager
+
+The VMM translates virtual addresses into physical memory using the page tables.
+
+## Q&A
+
+**Q: Why do programs use virtual addresses instead of physical addresses?**  
+A: So the kernel can isolate processes and manage memory safely.
+
+**Q: What is the top-level paging structure in x86_64?**  
+A: The PML4.
+
+**Q: Why is copy-on-write useful?**  
+A: It lets the kernel share memory until a write actually happens.
+
+## Simple example
+
+Think of the VMM as a city navigation system.
+
+- the address a program uses is a street address
+- the physical frame is the actual building
+- the page table is the navigation database
+
+The program never needs to know where the building physically sits.
+
+## What this project does
+
+The VMM:
+
+- reads the active `CR3`
+- creates new address spaces
+- maps and unmaps pages
+- supports huge pages where useful
+- clones address spaces with copy-on-write behavior
+
+## Real code reference
+
+- `src/kernel/mm/vmm.c`
+
+## Diagram
+
+```text
+virtual address
+  -> PML4
+  -> PDPT
+  -> PD
+  -> PT
+  -> physical frame
+```
+
+## Small code map
+
+- `vmm_init()` captures the current `CR3`.
+- `vmm_create_address_space()` clones the kernel mapping into a new address space.
+- `vmm_map()` installs a single mapping.
+- `vmm_map_range()` maps a continuous range, using huge pages when possible.
+- `vmm_unmap()` removes one mapping and invalidates the TLB entry.
+- `vmm_clone_address_space()` builds copy-on-write user clones.
+
+## Why it matters
+
+The VMM is what makes isolation possible.
+
+Without it:
+
+- every task would share the same raw memory
+- user programs could overwrite kernel data directly
+- memory management would be fragile and unsafe
+
+## Practical example
+
+When the kernel creates a window buffer for user space, it:
+
+1. allocates kernel memory
+2. maps it into the current task's user address space
+3. lets the user program draw into it through a safe virtual address
+
+## What can go wrong
+
+- a wrong mapping can point to the wrong physical frame
+- a missing mapping causes page faults
+- a bad address-space clone can break process isolation
+
+## Practical takeaway
+
+The VMM is the translator between what code sees and what RAM actually contains.
+
+## Line by line example
+
+```c
+uint64_t* new_pml4 = (uint64_t*)pmm_alloc_frame();
+```
+
+- allocate one physical frame for the root page table.
+
+```c
+uint64_t* new_pdpt = (uint64_t*)pmm_alloc_frame();
+memset(new_pdpt, 0, 4096);
+```
+
+- build the next page-table level and clear it first.
+
+```c
+new_pml4[0] = (uint64_t)new_pdpt | PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
+```
+
+- hook the new PDPT into the PML4.
+- mark it usable by the CPU.
+
+```c
+pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | flags | PAGE_PRESENT;
+```
+
+- map a single 4 KiB page.
+- combine the physical frame address with the requested flags.
+
+```c
+__asm__ volatile ("invlpg (%0)" : : "r"(virt) : "memory");
+```
+
+- invalidate one stale TLB entry after unmapping.

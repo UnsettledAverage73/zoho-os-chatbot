@@ -1,0 +1,76 @@
+---
+id: boot-08-gdt-far-jump
+title: "Step 7: Load GDT and Far Jump"
+slug: /boot/08-gdt-far-jump
+sidebar_position: 9
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 7: Load GDT and Far Jump
+
+After paging is active, the boot path must load a 64-bit code segment and perform a far jump so `CS` is refreshed with the correct descriptor.
+
+<BootstrapStepFrame step={7} title="Step 7 visualizer" />
+
+## Q&A
+
+**Q: Why do we reload the GDT now?**  
+A: Because we need 64-bit code and data descriptors after paging has been enabled.
+
+**Q: Why do we need a far jump?**  
+A: To force the CPU to load the new code segment into `CS`.
+
+**Q: Why is a normal jump not enough?**  
+A: Because it does not refresh the segment state in the same way.
+
+## Simple example
+
+Imagine changing the rules of a room, but the current door sign still shows the old rules.
+
+- loading the 64-bit GDT installs the new rule book
+- the far jump forces the CPU to re-read the code segment
+
+Without that jump, the processor can keep using stale segment state even though the rest of the system is already prepared for 64-bit execution.
+
+## Why this is required
+
+The CPU does not automatically refresh `CS` just because paging changed. The far jump is the explicit action that makes the new code descriptor take effect.
+
+That is why this step is separate from paging: the memory model and the code segment model are related, but they are not the same operation.
+
+## Real code reference
+
+`src/boot/main.asm`:
+
+```asm
+lgdt [gdt64.pointer]
+mov edi, esi
+jmp gdt64.code:long_mode_start
+```
+
+### Line by line
+
+- `lgdt [gdt64.pointer]` loads the 64-bit GDT descriptor into the CPU.
+- `mov edi, esi` preserves the multiboot info pointer for the 64-bit code path.
+- `jmp gdt64.code:long_mode_start` performs the far jump that finalizes the segment switch.
+
+The far jump is not optional. Without it, the processor state is inconsistent and execution becomes undefined.
+
+## What can go wrong
+
+- loading the wrong descriptor
+- jumping to an address that is not identity-mapped
+- forgetting to use a far jump after `lgdt`
+
+## Line by line example
+
+```asm
+lgdt [gdt64.pointer]
+mov edi, esi
+jmp gdt64.code:long_mode_start
+```
+
+- `lgdt [gdt64.pointer]` loads the 64-bit GDT descriptor.
+- `mov edi, esi` preserves the Multiboot info pointer for the 64-bit code path.
+- `jmp gdt64.code:long_mode_start` forces the CPU to reload `CS` from the new 64-bit descriptor.

@@ -1,0 +1,144 @@
+---
+id: core-07-graphics-window
+title: "Chapter 8: Graphics and Window Manager"
+slug: /core/07-graphics-window
+sidebar_position: 12
+---
+
+# Graphics and Window Manager
+
+This chapter explains how the kernel turns framebuffer memory into a simple graphical desktop and manages overlapping windows.
+
+## Q&A
+
+**Q: Why does the kernel need a graphics layer?**  
+A: So it can draw windows, the cursor, and the shell interface.
+
+**Q: What is a framebuffer?**  
+A: A memory region where each pixel maps directly to screen output.
+
+**Q: Why use a backbuffer?**  
+A: To draw off-screen first and copy only finished regions to the display.
+
+## Simple example
+
+Think of the framebuffer as a whiteboard on the wall.
+
+- the backbuffer is your scratch paper
+- the window manager decides what goes where
+- swapping copies the finished result onto the whiteboard
+
+## What this project does
+
+The graphics layer:
+
+- reads framebuffer details from Multiboot2
+- maps framebuffer memory into the kernel address space
+- allocates a backbuffer
+- draws pixels, rectangles, text, and cursors
+- swaps the finished image to the real framebuffer
+
+The window manager:
+
+- keeps a list of windows
+- tracks z-order and dirty regions
+- draws window title bars and shadows
+- supports cursor movement and window dragging
+
+## Real code reference
+
+- `src/kernel/gui/graphics.c`
+- `src/kernel/gui/window.c`
+
+## Diagram
+
+```text
+framebuffer tag -> graphics_init -> backbuffer -> window manager -> screen swap
+```
+
+## Small code map
+
+- `graphics_init()` maps the framebuffer and allocates the backbuffer.
+- `graphics_draw_char()` renders one 8x8 font glyph.
+- `graphics_clear()` fills the backbuffer with one color.
+- `graphics_swap_rects()` copies only dirty regions to the real framebuffer.
+- `window_create()` creates a window and inserts it into the global list.
+- `window_update()` and `window_draw_all()` keep the desktop live.
+
+## Line by line sample
+
+```c
+fb_width = tag->width;
+fb_height = tag->height;
+fb_pitch = tag->pitch;
+fb_bpp = tag->bpp;
+```
+
+- `fb_width` stores the visible width.
+- `fb_height` stores the visible height.
+- `fb_pitch` stores bytes per scanline.
+- `fb_bpp` stores bits per pixel.
+
+```c
+backbuffer = kmalloc(fb_size);
+```
+
+- allocate off-screen memory large enough to hold the full screen.
+
+## Why pitch matters
+
+Pitch is the real row size in bytes, and it can be larger than `width * 4`.
+If the code assumes a tight row layout, colors will shift and the image will break on some hardware.
+
+## What can go wrong
+
+- bad framebuffer mapping can make the screen blank
+- wrong pitch arithmetic can skew the desktop
+- missing backbuffer allocation can disable drawing
+
+## Practical takeaway
+
+Graphics here is a controlled memory copy problem: draw off-screen, then copy the right rectangles to the real display.
+
+## Line by line example
+
+```c
+fb_width = tag->width;
+fb_height = tag->height;
+fb_pitch = tag->pitch;
+fb_bpp = tag->bpp;
+```
+
+- store the framebuffer geometry.
+- pitch is the real row size, not just width times bytes-per-pixel.
+
+```c
+vmm_map_range((void*)cr3, fb_addr, phys_addr, fb_size, PAGE_WRITABLE | PAGE_PRESENT | (1 << 3) | (1 << 4));
+```
+
+- map framebuffer memory into the kernel's address space.
+- mark it as MMIO by using the cache-control bits.
+
+```c
+backbuffer = kmalloc(fb_size);
+```
+
+- allocate off-screen drawing storage.
+
+```c
+graphics_put_pixel(...);
+```
+
+- write one pixel into the backbuffer.
+
+```c
+graphics_swap_rects(rects, count);
+```
+
+- copy only dirty rectangles from the backbuffer to the framebuffer.
+
+```c
+window_mark_region_dirty(shell_window, 0, 0, (int32_t)shell_window->w, (int32_t)client_h);
+```
+
+- tell the window manager which area needs to be redrawn.

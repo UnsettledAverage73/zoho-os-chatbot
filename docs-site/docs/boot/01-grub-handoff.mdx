@@ -1,0 +1,93 @@
+---
+id: boot-01-grub-handoff
+title: "Step 0: GRUB Handoff"
+slug: /boot/01-grub-handoff
+sidebar_position: 2
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 0: GRUB Handoff
+
+GRUB loads the kernel and enters your code in 32-bit mode. At this point the kernel is not yet executing 64-bit instructions, paging is not active, and your own stack still needs to be established.
+
+<BootstrapStepFrame step={0} title="Step 0 visualizer" />
+
+## Q&A
+
+**Q: What does GRUB actually hand over?**  
+A: It hands over CPU control, a Multiboot magic value in `EAX`, and a pointer to boot information in `EBX`.
+
+**Q: Does GRUB boot the kernel all the way to `kmain()`?**  
+A: No. It only loads the kernel and enters the bootstrap entry point.
+
+**Q: Why do we call this a handoff?**  
+A: Because ownership of execution moves from the bootloader to the kernel.
+
+## Simple example
+
+Imagine a hotel receptionist handing you a temporary room key and a note with your room number.
+
+- the receptionist is GRUB
+- the room key is control of execution
+- the note is the Multiboot information pointer
+
+You can enter the room, but you still need to arrange your desk and prepare the room for work. That is what the bootstrap code does next.
+
+## What matters here
+
+- `EAX` must contain the Multiboot2 magic value.
+- `EBX` carries the Multiboot info pointer supplied by GRUB.
+- Your boot code must treat the environment as temporary and take control quickly.
+
+## What GRUB is doing technically
+
+GRUB has already:
+
+- loaded the kernel image into memory
+- verified that it looks like a Multiboot2 kernel
+- placed boot information in memory
+- entered the kernel in 32-bit protected mode
+
+## Diagram
+
+```text
+GRUB
+  -> loads kernel image
+  -> places multiboot info in memory
+  -> sets EAX = magic
+  -> sets EBX = info pointer
+  -> jumps to start
+```
+
+At this point, the kernel has not yet taken over memory management or long mode setup.
+
+## Real code context
+
+In this repo, the entry path starts in `src/boot/main.asm`, where the Multiboot values are checked before long-mode setup continues.
+
+## Why this matters
+
+If you assume GRUB already gave you a normal runtime, you will crash early. This stage is only a handoff, not the final kernel environment.
+
+## Line by line example
+
+```text
+GRUB
+  -> loads kernel image
+  -> places multiboot info in memory
+  -> sets EAX = magic
+  -> sets EBX = info pointer
+  -> jumps to start
+```
+
+- GRUB places the kernel in memory.
+- GRUB stores the Multiboot magic in `EAX`.
+- GRUB stores the Multiboot info pointer in `EBX`.
+- GRUB jumps to the kernel's entry point.
+
+## What the kernel should assume
+
+- `EAX` and `EBX` are meaningful only at the start.
+- the current stack is not trustworthy yet.
+- the kernel owns execution from this point onward.

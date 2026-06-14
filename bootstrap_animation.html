@@ -1,0 +1,1662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OS Bootstrap: 32-bit → 64-bit</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  :root {
+    --bg: #020810;
+    --panel: #040e1a;
+    --border: #0a3a5a;
+    --accent: #00d4ff;
+    --green: #00ff88;
+    --orange: #ff6b35;
+    --yellow: #ffd700;
+    --red: #ff3355;
+    --dim: #1a3a4a;
+    --text: #a8d8ea;
+    --code: #7fdbca;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline effect */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,212,255,0.015) 2px,
+      rgba(0,212,255,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  header {
+    text-align: center;
+    padding: 30px 20px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  header h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: clamp(16px, 3vw, 28px);
+    font-weight: 900;
+    color: var(--accent);
+    letter-spacing: 4px;
+    text-shadow: 0 0 20px rgba(0,212,255,0.5);
+  }
+
+  header p {
+    color: #5a8a9a;
+    font-size: 12px;
+    margin-top: 6px;
+    letter-spacing: 2px;
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 260px 1fr 220px;
+    gap: 0;
+    height: calc(100vh - 90px);
+    min-height: 600px;
+  }
+
+  /* ─── LEFT: STEP LIST ─── */
+  .step-list {
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    overflow-y: auto;
+  }
+
+  .step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all 0.2s;
+    opacity: 0.45;
+  }
+
+  .step-item:hover { opacity: 0.75; background: rgba(0,212,255,0.04); }
+
+  .step-item.active {
+    opacity: 1;
+    border-left-color: var(--accent);
+    background: rgba(0,212,255,0.07);
+  }
+
+  .step-item.done { opacity: 0.65; border-left-color: var(--green); }
+
+  .step-num {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    background: rgba(0,212,255,0.1);
+    border: 1px solid var(--accent);
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 3px;
+    flex-shrink: 0;
+    transition: all 0.3s;
+  }
+
+  .step-item.done .step-num {
+    background: rgba(0,255,136,0.15);
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  .step-label { font-size: 11px; line-height: 1.4; color: var(--text); }
+  .step-label strong { color: #fff; font-size: 12px; display: block; }
+
+  /* ─── CENTER: VISUALIZATION ─── */
+  .viz {
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .stage {
+    display: none;
+    animation: fadeSlide 0.4s ease;
+  }
+
+  .stage.visible { display: block; }
+
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .stage-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    color: var(--accent);
+    letter-spacing: 3px;
+    margin-bottom: 4px;
+  }
+
+  .stage-sub {
+    font-size: 11px;
+    color: #5a8a9a;
+    margin-bottom: 20px;
+    letter-spacing: 1px;
+  }
+
+  /* CPU diagram */
+  .cpu-box {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 16px;
+    position: relative;
+  }
+
+  .cpu-box-title {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #5a8a9a;
+    margin-bottom: 12px;
+  }
+
+  .reg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+  }
+
+  .reg {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--dim);
+    border-radius: 4px;
+    padding: 8px 10px;
+    transition: all 0.4s;
+  }
+
+  .reg.highlight {
+    border-color: var(--yellow);
+    background: rgba(255,215,0,0.08);
+    box-shadow: 0 0 12px rgba(255,215,0,0.2);
+  }
+
+  .reg.active {
+    border-color: var(--green);
+    background: rgba(0,255,136,0.06);
+    box-shadow: 0 0 12px rgba(0,255,136,0.2);
+  }
+
+  .reg.danger {
+    border-color: var(--red);
+    background: rgba(255,51,85,0.08);
+  }
+
+  .reg-name { font-size: 9px; color: #5a8a9a; letter-spacing: 1px; }
+  .reg-val { font-size: 13px; color: #fff; margin-top: 2px; font-family: 'Share Tech Mono'; }
+
+  /* Code block */
+  .code-block {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .code-block::before {
+    content: attr(data-label);
+    position: absolute;
+    top: 8px; right: 12px;
+    font-size: 9px;
+    color: #3a6a7a;
+    letter-spacing: 2px;
+  }
+
+  .code-block code {
+    display: block;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    color: var(--code);
+    white-space: pre;
+  }
+
+  .code-block .cmt { color: #3a7a5a; }
+  .code-block .kw { color: var(--accent); }
+  .code-block .lit { color: var(--yellow); }
+  .code-block .hl { 
+    background: rgba(0,212,255,0.12); 
+    display: inline-block; 
+    width: 100%;
+    border-left: 2px solid var(--accent);
+    padding-left: 6px;
+    margin-left: -6px;
+  }
+
+  /* Memory diagram */
+  .mem-diagram {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .mem-header {
+    background: rgba(0,212,255,0.08);
+    padding: 8px 14px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mem-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(10,58,90,0.5);
+    gap: 14px;
+    transition: all 0.5s;
+    font-size: 11px;
+  }
+
+  .mem-row:last-child { border-bottom: none; }
+  .mem-row.active-row { background: rgba(0,255,136,0.06); }
+
+  .mem-addr { color: var(--orange); width: 80px; flex-shrink: 0; font-size: 10px; }
+  .mem-name { color: #fff; flex: 1; }
+  .mem-arrow { color: var(--accent); font-size: 14px; }
+  .mem-desc { color: #5a8a9a; font-size: 10px; text-align: right; }
+
+  /* Bit status indicators */
+  .bit-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  .bit-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--dim);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    transition: all 0.4s;
+  }
+
+  .bit-badge.on {
+    border-color: var(--green);
+    background: rgba(0,255,136,0.08);
+  }
+
+  .bit-badge.off {
+    border-color: var(--red);
+    background: rgba(255,51,85,0.05);
+    opacity: 0.6;
+  }
+
+  .bit-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--dim);
+    transition: all 0.4s;
+  }
+
+  .bit-badge.on .bit-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .bit-badge.off .bit-dot { background: var(--red); }
+
+  /* Flow arrows in viz */
+  .flow-arrow {
+    text-align: center;
+    color: var(--accent);
+    font-size: 20px;
+    margin: 8px 0;
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:0.5} 50%{opacity:1} }
+
+  /* Page table visual */
+  .ptable {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .ptable-col {
+    flex: 1;
+    min-width: 80px;
+  }
+
+  .ptable-title {
+    font-size: 9px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  .ptable-entry {
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--dim);
+    border-radius: 3px;
+    padding: 6px 8px;
+    font-size: 10px;
+    text-align: center;
+    margin-bottom: 3px;
+    transition: all 0.4s;
+  }
+
+  .ptable-entry.mapped {
+    border-color: var(--green);
+    background: rgba(0,255,136,0.08);
+    color: var(--green);
+  }
+
+  .ptable-entry.ptr {
+    border-color: var(--accent);
+    background: rgba(0,212,255,0.08);
+    color: var(--accent);
+  }
+
+  .ptable-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+    font-size: 18px;
+    padding-top: 28px;
+  }
+
+  /* GDT visual */
+  .gdt-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 6px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid var(--dim);
+  }
+
+  .gdt-idx {
+    background: rgba(0,212,255,0.1);
+    border-right: 1px solid var(--dim);
+    padding: 8px 10px;
+    font-size: 10px;
+    color: var(--accent);
+    width: 40px;
+    text-align: center;
+  }
+
+  .gdt-name {
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #fff;
+    flex: 1;
+  }
+
+  .gdt-bits {
+    padding: 8px 10px;
+    font-size: 9px;
+    color: #5a8a9a;
+    text-align: right;
+    font-family: 'Share Tech Mono';
+  }
+
+  .gdt-row.code-seg { border-color: var(--green); }
+  .gdt-row.data-seg { border-color: var(--orange); }
+
+  /* Info callout */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: rgba(0,212,255,0.05);
+    padding: 10px 14px;
+    border-radius: 0 4px 4px 0;
+    margin-bottom: 14px;
+    font-size: 11px;
+    line-height: 1.6;
+  }
+
+  .callout.warn { border-left-color: var(--orange); background: rgba(255,107,53,0.05); }
+  .callout.success { border-left-color: var(--green); background: rgba(0,255,136,0.05); }
+  .callout.danger { border-left-color: var(--red); background: rgba(255,51,85,0.05); }
+
+  .callout strong { color: #fff; }
+
+  /* ─── RIGHT: CPU STATE PANEL ─── */
+  .cpu-state {
+    border-left: 1px solid var(--border);
+    padding: 16px;
+    overflow-y: auto;
+  }
+
+  .state-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: #3a6a7a;
+    margin-bottom: 14px;
+  }
+
+  .state-group {
+    margin-bottom: 16px;
+  }
+
+  .state-group-title {
+    font-size: 9px;
+    color: #3a6a7a;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--dim);
+  }
+
+  .state-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    font-size: 11px;
+    border-bottom: 1px solid rgba(10,58,90,0.3);
+    gap: 8px;
+  }
+
+  .state-key { color: #5a8a9a; flex-shrink: 0; }
+
+  .state-val {
+    font-size: 11px;
+    text-align: right;
+    transition: all 0.4s;
+  }
+
+  .state-val.on { color: var(--green); }
+  .state-val.off { color: var(--red); }
+  .state-val.changing { color: var(--yellow); }
+  .state-val.neutral { color: var(--text); }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    align-items: center;
+    background: var(--panel);
+    grid-column: 1 / -1;
+  }
+
+  .btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    border: 1px solid var(--accent);
+    background: rgba(0,212,255,0.08);
+    color: var(--accent);
+    padding: 8px 16px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s;
+  }
+
+  .btn:hover { background: rgba(0,212,255,0.18); box-shadow: 0 0 10px rgba(0,212,255,0.3); }
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn.danger { border-color: var(--red); color: var(--red); background: rgba(255,51,85,0.08); }
+  .btn.success { border-color: var(--green); color: var(--green); background: rgba(0,255,136,0.08); }
+
+  .progress-bar {
+    flex: 1;
+    height: 4px;
+    background: var(--dim);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--green));
+    border-radius: 2px;
+    transition: width 0.4s ease;
+    box-shadow: 0 0 8px rgba(0,212,255,0.5);
+  }
+
+  .step-counter {
+    font-size: 11px;
+    color: #5a8a9a;
+    white-space: nowrap;
+  }
+
+  /* VGA success screen */
+  .vga-screen {
+    background: #000;
+    border: 2px solid #444;
+    border-radius: 4px;
+    padding: 16px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    margin-bottom: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .vga-char {
+    display: inline-block;
+    padding: 2px 6px;
+    background: #000;
+    color: #fff;
+    transition: all 0.3s;
+  }
+
+  .vga-char.lit {
+    background: #fff;
+    color: #000;
+    box-shadow: 0 0 10px #fff;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
+
+  /* Error badges */
+  .err-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+
+  .err-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255,51,85,0.3);
+    border-radius: 4px;
+    background: rgba(255,51,85,0.05);
+    font-size: 11px;
+  }
+
+  .err-icon { color: var(--red); font-size: 14px; flex-shrink: 0; }
+  .err-text { line-height: 1.5; }
+  .err-text strong { color: var(--red); display: block; }
+
+  .wrapper {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
+  }
+
+  .main-content {
+    display: grid;
+    grid-template-columns: 260px 1fr 220px;
+    overflow: hidden;
+  }
+
+  /* Animated connector line between stages */
+  .connector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+    font-size: 10px;
+    color: #3a6a7a;
+  }
+  .connector::before, .connector::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--dim), transparent);
+  }
+
+  @media (max-width: 700px) {
+    .main-content { grid-template-columns: 1fr; }
+    .step-list { display: none; }
+    .cpu-state { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrapper">
+  <header>
+    <h1>OS BOOTSTRAP VISUALIZER</h1>
+    <p>GRUB → 32-BIT → LONG MODE → 64-BIT KERNEL</p>
+  </header>
+
+  <div class="main-content">
+    <!-- LEFT PANEL -->
+    <div class="step-list" id="stepList"></div>
+
+    <!-- CENTER VISUALIZATION -->
+    <div class="viz" id="viz"></div>
+
+    <!-- RIGHT PANEL: CPU STATE -->
+    <div class="cpu-state">
+      <div class="state-title">▸ LIVE CPU STATE</div>
+
+      <div class="state-group">
+        <div class="state-group-title">MODE</div>
+        <div class="state-item">
+          <span class="state-key">CPU Mode</span>
+          <span class="state-val" id="s-mode">32-bit Protected</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">Bit Width</span>
+          <span class="state-val" id="s-bits">32</span>
+        </div>
+      </div>
+
+      <div class="state-group">
+        <div class="state-group-title">FLAGS</div>
+        <div class="state-item">
+          <span class="state-key">Interrupts</span>
+          <span class="state-val off" id="s-ints">OFF</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">Paging</span>
+          <span class="state-val off" id="s-paging">OFF</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">PAE</span>
+          <span class="state-val off" id="s-pae">OFF</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">LME (EFER)</span>
+          <span class="state-val off" id="s-lme">OFF</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">PE (CR0)</span>
+          <span class="state-val on" id="s-pe">ON</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">PG (CR0)</span>
+          <span class="state-val off" id="s-pg">OFF</span>
+        </div>
+      </div>
+
+      <div class="state-group">
+        <div class="state-group-title">REGISTERS</div>
+        <div class="state-item">
+          <span class="state-key">EAX</span>
+          <span class="state-val neutral" id="s-eax">0x2BADB002</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">EBX</span>
+          <span class="state-val neutral" id="s-ebx">0x???</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">ESP/RSP</span>
+          <span class="state-val off" id="s-esp">NOT SET</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">CR3</span>
+          <span class="state-val off" id="s-cr3">NOT SET</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">CS</span>
+          <span class="state-val neutral" id="s-cs">0x08 (32-bit)</span>
+        </div>
+      </div>
+
+      <div class="state-group">
+        <div class="state-group-title">STACK</div>
+        <div class="state-item">
+          <span class="state-key">Stack</span>
+          <span class="state-val off" id="s-stack">NONE</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">GDT</span>
+          <span class="state-val off" id="s-gdt">GRUB DEFAULT</span>
+        </div>
+        <div class="state-item">
+          <span class="state-key">Page Tables</span>
+          <span class="state-val off" id="s-pt">NONE</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <button class="btn danger" id="btnReset" onclick="reset()">⟳ RESET</button>
+    <button class="btn" id="btnPrev" onclick="prevStep()" disabled>◀ PREV</button>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    <span class="step-counter" id="stepCounter">0 / 9</span>
+    <button class="btn" id="btnNext" onclick="nextStep()">NEXT ▶</button>
+    <button class="btn success" id="btnAuto" onclick="toggleAuto()">▶▶ AUTO</button>
+  </div>
+</div>
+
+<script>
+const steps = [
+  {
+    id: 0,
+    label: "GRUB Handoff",
+    sublabel: "What GRUB gives you",
+    state: {
+      mode: ["32-bit Protected", "neutral"],
+      bits: ["32", "neutral"],
+      ints: ["OFF", "off"],
+      paging: ["OFF", "off"],
+      pae: ["OFF", "off"],
+      lme: ["OFF", "off"],
+      pe: ["ON", "on"],
+      pg: ["OFF", "off"],
+      eax: ["0x2BADB002", "on"],
+      ebx: ["→ multiboot info", "on"],
+      esp: ["NOT SET", "off"],
+      cr3: ["NOT SET", "off"],
+      cs: ["0x08 (32-bit)", "neutral"],
+      stack: ["NONE ⚠", "off"],
+      gdt: ["GRUB default", "neutral"],
+      pt: ["NONE", "off"]
+    },
+    render: () => `
+      <div class="stage-title">STEP 0 — GRUB HANDOFF</div>
+      <div class="stage-sub">CPU IS IN 32-BIT PROTECTED MODE · PAGING OFF · INTERRUPTS OFF</div>
+      
+      <div class="callout">
+        <strong>GRUB has loaded your kernel into memory.</strong><br>
+        You are now in 32-bit Protected Mode. The kernel image is in RAM, but you can't run 64-bit code yet.
+        Two critical registers tell you what GRUB passed in.
+      </div>
+
+      <div class="cpu-box">
+        <div class="cpu-box-title">▸ REGISTERS ON ENTRY</div>
+        <div class="reg-grid">
+          <div class="reg highlight">
+            <div class="reg-name">EAX</div>
+            <div class="reg-val">0x2BADB002</div>
+          </div>
+          <div class="reg highlight">
+            <div class="reg-name">EBX</div>
+            <div class="reg-val">→ multiboot2_info*</div>
+          </div>
+          <div class="reg danger">
+            <div class="reg-name">ESP</div>
+            <div class="reg-val">UNDEFINED ⚠</div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">CS</div>
+            <div class="reg-val">0x08 (32-bit)</div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">CR0</div>
+            <div class="reg-val">PE=1, PG=0</div>
+          </div>
+          <div class="reg danger">
+            <div class="reg-name">CR3</div>
+            <div class="reg-val">NOT SET ⚠</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bit-row">
+        <div class="bit-badge off"><div class="bit-dot"></div> Interrupts</div>
+        <div class="bit-badge off"><div class="bit-dot"></div> Paging</div>
+        <div class="bit-badge on"><div class="bit-dot"></div> Protected Mode</div>
+        <div class="bit-badge off"><div class="bit-dot"></div> Stack</div>
+        <div class="bit-badge off"><div class="bit-dot"></div> 64-bit Mode</div>
+      </div>
+
+      <div class="callout warn">
+        <strong>⚠ No stack yet!</strong> The CPU will triple-fault if any function call happens before we set ESP.
+        Our first job: set up the stack.
+      </div>
+    `
+  },
+  {
+    id: 1,
+    label: "Multiboot Header",
+    sublabel: "Identify kernel to GRUB",
+    state: {
+      mode: ["32-bit Protected", "neutral"],
+      bits: ["32", "neutral"],
+      ints: ["OFF", "off"],
+      paging: ["OFF", "off"],
+      pae: ["OFF", "off"],
+      lme: ["OFF", "off"],
+      pe: ["ON", "on"],
+      pg: ["OFF", "off"],
+      eax: ["0x2BADB002", "on"],
+      ebx: ["→ multiboot info", "on"],
+      esp: ["NOT SET", "off"],
+      cr3: ["NOT SET", "off"],
+      cs: ["0x08 (32-bit)", "neutral"],
+      stack: ["NONE ⚠", "off"],
+      gdt: ["GRUB default", "neutral"],
+      pt: ["NONE", "off"]
+    },
+    render: () => `
+      <div class="stage-title">STEP 1 — MULTIBOOT2 HEADER</div>
+      <div class="stage-sub">boot.S · .section .multiboot</div>
+
+      <div class="callout">
+        <strong>The Multiboot2 header is a magic signature</strong> placed at the very start of your kernel binary.
+        GRUB reads this to confirm: "yes, this is a bootable kernel." Without it, GRUB refuses to load your file.
+      </div>
+
+      <div class="code-block" data-label="boot.S">
+        <code><span class="cmt"># Must appear in first 32KB of kernel binary</span>
+<span class="kw">.section</span> .multiboot
+<span class="kw">.align</span> 8
+
+<span class="hl"><span class="kw">.long</span> <span class="lit">0xe85250d6</span>    <span class="cmt"># ← MAGIC (Multiboot2 signature)</span></span>
+<span class="kw">.long</span> <span class="lit">0</span>             <span class="cmt"># architecture (i386)</span>
+<span class="kw">.long</span> header_end - header_start
+<span class="kw">.long</span> -(0xe85250d6 + 0 + (header_end - header_start))
+                      <span class="cmt"># ↑ checksum — all 4 fields must sum to 0</span>
+
+header_start:
+<span class="kw">.long</span> <span class="lit">0</span>             <span class="cmt"># end tag</span>
+header_end:</code>
+      </div>
+
+      <div class="mem-diagram">
+        <div class="mem-header">▸ KERNEL BINARY LAYOUT (first bytes)</div>
+        <div class="mem-row active-row">
+          <span class="mem-addr">0x00000000</span>
+          <span class="mem-name">Multiboot2 Header</span>
+          <span class="mem-arrow">◀</span>
+          <span class="mem-desc">GRUB reads this</span>
+        </div>
+        <div class="mem-row">
+          <span class="mem-addr">0x0000001C</span>
+          <span class="mem-name">_start (entry point)</span>
+          <span class="mem-arrow"></span>
+          <span class="mem-desc">your code begins</span>
+        </div>
+        <div class="mem-row">
+          <span class="mem-addr">...</span>
+          <span class="mem-name">kernel code / data</span>
+          <span class="mem-arrow"></span>
+          <span class="mem-desc"></span>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Checksum rule:</strong> magic + arch + header_length + checksum must equal 0 (mod 2³²).
+        Get it wrong → GRUB error "not a Multiboot kernel".
+      </div>
+    `
+  },
+  {
+    id: 2,
+    label: "Entry Point + Stack",
+    sublabel: "_start & 16KB BSS stack",
+    state: {
+      mode: ["32-bit Protected", "neutral"],
+      bits: ["32", "neutral"],
+      ints: ["OFF ✓", "on"],
+      paging: ["OFF", "off"],
+      pae: ["OFF", "off"],
+      lme: ["OFF", "off"],
+      pe: ["ON", "on"],
+      pg: ["OFF", "off"],
+      eax: ["0x2BADB002", "neutral"],
+      ebx: ["→ multiboot info", "neutral"],
+      esp: ["stack_top ✓", "on"],
+      cr3: ["NOT SET", "off"],
+      cs: ["0x08 (32-bit)", "neutral"],
+      stack: ["16 KB ready ✓", "on"],
+      gdt: ["GRUB default", "neutral"],
+      pt: ["NONE", "off"]
+    },
+    render: () => `
+      <div class="stage-title">STEP 2 — ENTRY POINT & STACK SETUP</div>
+      <div class="stage-sub">_start label · cli · ESP ← stack_top</div>
+
+      <div class="callout">
+        <strong>The CPU crashes instantly without a stack.</strong>
+        CALL instructions push return addresses onto the stack. No stack = triple fault on the first function call.
+      </div>
+
+      <div class="code-block" data-label="boot.S">
+        <code><span class="kw">.global</span> _start
+_start:
+<span class="hl">    <span class="kw">cli</span>                  <span class="cmt"># disable interrupts (SAFETY FIRST)</span></span>
+    <span class="kw">mov</span> $stack_top, <span class="lit">%esp</span>  <span class="cmt"># point stack pointer to top of our stack</span>
+    <span class="kw">call</span> start32          <span class="cmt"># enter setup code</span>
+
+<span class="cmt"># ── Stack lives in BSS (zero-initialized) ──</span>
+<span class="kw">.section</span> .bss
+<span class="kw">.align</span> 16
+stack_bottom:
+<span class="hl">    <span class="kw">.skip</span> <span class="lit">16384</span>          <span class="cmt"># 16 KB = 16,384 bytes</span></span>
+stack_top:               <span class="cmt"># ESP points HERE (stacks grow DOWN)</span></code>
+      </div>
+
+      <div class="mem-diagram">
+        <div class="mem-header">▸ STACK IN MEMORY (grows downward ↓)</div>
+        <div class="mem-row active-row">
+          <span class="mem-addr">stack_top</span>
+          <span class="mem-name">← ESP points here</span>
+          <span class="mem-arrow">◀</span>
+          <span class="mem-desc">high address</span>
+        </div>
+        <div class="mem-row">
+          <span class="mem-addr">+4096</span>
+          <span class="mem-name">stack grows DOWN as you push</span>
+          <span class="mem-arrow">↓</span>
+          <span class="mem-desc"></span>
+        </div>
+        <div class="mem-row">
+          <span class="mem-addr">stack_bot</span>
+          <span class="mem-name">stack_bottom (DO NOT CROSS)</span>
+          <span class="mem-arrow"></span>
+          <span class="mem-desc">low address</span>
+        </div>
+      </div>
+
+      <div class="bit-row">
+        <div class="bit-badge on"><div class="bit-dot"></div> Interrupts OFF (cli)</div>
+        <div class="bit-badge on"><div class="bit-dot"></div> Stack Ready</div>
+        <div class="bit-badge off"><div class="bit-dot"></div> Paging</div>
+        <div class="bit-badge off"><div class="bit-dot"></div> 64-bit</div>
+      </div>
+    `
+  },
+  {
+    id: 3,
+    label: "Enable PAE",
+    sublabel: "CR4 bit 5 — required for long mode",
+    state: {
+      mode: ["32-bit Protected", "neutral"],
+      bits: ["32", "neutral"],
+      ints: ["OFF ✓", "on"],
+      paging: ["OFF", "off"],
+      pae: ["ENABLED ✓", "on"],
+      lme: ["OFF", "off"],
+      pe: ["ON", "on"],
+      pg: ["OFF", "off"],
+      eax: ["CR4 | 0x20", "changing"],
+      ebx: ["→ multiboot info", "neutral"],
+      esp: ["stack_top ✓", "on"],
+      cr3: ["NOT SET", "off"],
+      cs: ["0x08 (32-bit)", "neutral"],
+      stack: ["16 KB ready ✓", "on"],
+      gdt: ["GRUB default", "neutral"],
+      pt: ["NONE (next)", "off"]
+    },
+    render: () => `
+      <div class="stage-title">STEP 3 — ENABLE PAE</div>
+      <div class="stage-sub">Physical Address Extension · CR4[bit 5] = 1</div>
+
+      <div class="callout">
+        <strong>PAE = Physical Address Extension.</strong>
+        Long mode (64-bit) is <em>hardwired</em> to require PAE paging structures (PML4 → PDPT → PD → PT).
+        Without setting this bit, the CPU will refuse to enter Long Mode, period.
+      </div>
+
+      <div class="code-block" data-label="start32">
+        <code><span class="cmt"># CR4 controls extended CPU features</span>
+<span class="kw">mov</span> <span class="lit">%cr4</span>, <span class="lit">%eax</span>       <span class="cmt"># read current CR4</span>
+<span class="hl"><span class="kw">or</span>  <span class="lit">$0x20</span>, <span class="lit">%eax</span>      <span class="cmt"># set bit 5 = PAE flag</span></span>
+<span class="kw">mov</span> <span class="lit">%eax</span>, <span class="lit">%cr4</span>       <span class="cmt"># write back</span></code>
+      </div>
+
+      <div class="cpu-box">
+        <div class="cpu-box-title">▸ CR4 REGISTER — CONTROL REGISTER 4</div>
+        <div class="reg-grid">
+          <div class="reg">
+            <div class="reg-name">BIT 0</div>
+            <div class="reg-val">VME</div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">BIT 1</div>
+            <div class="reg-val">PVI</div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">BIT 4</div>
+            <div class="reg-val">PSE</div>
+          </div>
+          <div class="reg active">
+            <div class="reg-name">BIT 5 ← WE SET THIS</div>
+            <div class="reg-val" style="color:var(--green)">PAE = 1 ✓</div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">BIT 7</div>
+            <div class="reg-val">PGE</div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">BIT 9</div>
+            <div class="reg-val">OSFXSR</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Why PAE matters:</strong> PAE extends page table entries from 32-bit to 64-bit,
+        allowing the 4-level paging hierarchy (PML4/PDPT/PD/PT) that 64-bit mode depends on.
+        No PAE → no Long Mode. It's enforced by hardware.
+      </div>
+    `
+  },
+  {
+    id: 4,
+    label: "Page Tables",
+    sublabel: "PML4 → PDPT → PD (identity map)",
+    state: {
+      mode: ["32-bit Protected", "neutral"],
+      bits: ["32", "neutral"],
+      ints: ["OFF ✓", "on"],
+      paging: ["OFF (soon)", "changing"],
+      pae: ["ENABLED ✓", "on"],
+      lme: ["OFF", "off"],
+      pe: ["ON", "on"],
+      pg: ["OFF", "off"],
+      eax: ["pml4_table", "changing"],
+      ebx: ["→ multiboot info", "neutral"],
+      esp: ["stack_top ✓", "on"],
+      cr3: ["pml4_table ✓", "on"],
+      cs: ["0x08 (32-bit)", "neutral"],
+      stack: ["16 KB ready ✓", "on"],
+      gdt: ["GRUB default", "neutral"],
+      pt: ["IDENTITY MAP ✓", "on"]
+    },
+    render: () => `
+      <div class="stage-title">STEP 4 — PAGE TABLES + CR3</div>
+      <div class="stage-sub">PML4 → PDPT → PD → first 2MB identity mapped</div>
+
+      <div class="callout">
+        <strong>Before turning paging on, the CPU needs a valid page table.</strong>
+        We create a minimal identity map: virtual address 0x0 → physical 0x0.
+        This means the CPU can keep fetching our code from the same addresses after paging is enabled.
+      </div>
+
+      <div class="ptable">
+        <div class="ptable-col">
+          <div class="ptable-title">PML4</div>
+          <div class="ptable-entry ptr">Entry[0] → PDPT</div>
+          <div class="ptable-entry">Entry[1] = 0</div>
+          <div class="ptable-entry">Entry[2] = 0</div>
+          <div class="ptable-entry">...</div>
+        </div>
+        <div class="ptable-arrow">→</div>
+        <div class="ptable-col">
+          <div class="ptable-title">PDPT</div>
+          <div class="ptable-entry ptr">Entry[0] → PD</div>
+          <div class="ptable-entry">Entry[1] = 0</div>
+          <div class="ptable-entry">Entry[2] = 0</div>
+          <div class="ptable-entry">...</div>
+        </div>
+        <div class="ptable-arrow">→</div>
+        <div class="ptable-col">
+          <div class="ptable-title">PD</div>
+          <div class="ptable-entry mapped">Entry[0] = 0x83<br><span style="font-size:9px">2MB huge page</span></div>
+          <div class="ptable-entry">Entry[1] = 0</div>
+          <div class="ptable-entry">...</div>
+        </div>
+        <div class="ptable-arrow">→</div>
+        <div class="ptable-col">
+          <div class="ptable-title">PHYS MEM</div>
+          <div class="ptable-entry mapped">0x000000<br>↕ 2MB<br>0x1FFFFF</div>
+        </div>
+      </div>
+
+      <div class="code-block" data-label="boot.S">
+        <code><span class="cmt"># Setup: PML4[0] → PDPT, PDPT[0] → PD, PD[0] = 2MB page</span>
+<span class="kw">mov</span> $pdpt_table, <span class="lit">%eax</span>
+<span class="kw">or</span>  $0b11, <span class="lit">%eax</span>          <span class="cmt"># Present + Writable bits</span>
+<span class="kw">mov</span> <span class="lit">%eax</span>, pml4_table     <span class="cmt"># PML4[0] → PDPT</span>
+
+<span class="kw">mov</span> $pd_table, <span class="lit">%eax</span>
+<span class="kw">or</span>  $0b11, <span class="lit">%eax</span>
+<span class="kw">mov</span> <span class="lit">%eax</span>, pdpt_table     <span class="cmt"># PDPT[0] → PD</span>
+
+<span class="kw">mov</span> $0x83, pd_table       <span class="cmt"># PD[0] = 0x0, 2MB huge page (PS+P+W)</span>
+
+<span class="cmt"># Point CR3 to PML4 root</span>
+<span class="hl"><span class="kw">mov</span> $pml4_table, <span class="lit">%eax</span>
+<span class="kw">mov</span> <span class="lit">%eax</span>, <span class="lit">%cr3</span>           <span class="cmt"># CR3 = root of paging hierarchy</span></span></code>
+      </div>
+
+      <div class="callout success">
+        <strong>Identity mapping</strong> means virtual 0x0 = physical 0x0.
+        After paging turns on, the CPU doesn't suddenly lose track of where our code is — addresses stay the same.
+      </div>
+    `
+  },
+  {
+    id: 5,
+    label: "Enable Long Mode (EFER)",
+    sublabel: "MSR 0xC0000080 · LME bit",
+    state: {
+      mode: ["Transitioning...", "changing"],
+      bits: ["32→64", "changing"],
+      ints: ["OFF ✓", "on"],
+      paging: ["OFF (next)", "changing"],
+      pae: ["ENABLED ✓", "on"],
+      lme: ["ENABLED ✓", "on"],
+      pe: ["ON", "on"],
+      pg: ["OFF (next)", "off"],
+      eax: ["EFER | LME", "changing"],
+      ebx: ["→ multiboot info", "neutral"],
+      esp: ["stack_top ✓", "on"],
+      cr3: ["pml4_table ✓", "on"],
+      cs: ["0x08 (32-bit)", "neutral"],
+      stack: ["16 KB ready ✓", "on"],
+      gdt: ["GRUB default", "neutral"],
+      pt: ["IDENTITY MAP ✓", "on"]
+    },
+    render: () => `
+      <div class="stage-title">STEP 5 — ENABLE LONG MODE (EFER MSR)</div>
+      <div class="stage-sub">Extended Feature Enable Register · LME = Long Mode Enable</div>
+
+      <div class="callout">
+        <strong>EFER is a Model Specific Register (MSR)</strong> — a special CPU register accessible only through
+        RDMSR / WRMSR instructions. Setting the LME (Long Mode Enable) bit tells the CPU:
+        "I want to run in 64-bit mode. Activate it when paging turns on."
+      </div>
+
+      <div class="code-block" data-label="boot.S — MSR access">
+        <code><span class="cmt"># MSR = Model Specific Register</span>
+<span class="cmt"># Access via ECX (address), EAX:EDX (data)</span>
+
+<span class="hl"><span class="kw">mov</span> $<span class="lit">0xC0000080</span>, <span class="lit">%ecx</span>  <span class="cmt"># EFER MSR address</span></span>
+<span class="kw">rdmsr</span>                    <span class="cmt"># read EFER into EAX</span>
+<span class="hl"><span class="kw">or</span>  $<span class="lit">0x100</span>, <span class="lit">%eax</span>        <span class="cmt"># bit 8 = LME (Long Mode Enable)</span></span>
+<span class="kw">wrmsr</span>                    <span class="cmt"># write back to EFER</span>
+
+<span class="cmt"># LME is now SET but long mode not yet ACTIVE</span>
+<span class="cmt"># It activates when PE=1 AND PG=1 (next step)</span></code>
+      </div>
+
+      <div class="cpu-box">
+        <div class="cpu-box-title">▸ EFER MSR BIT MAP (0xC0000080)</div>
+        <div class="reg-grid">
+          <div class="reg">
+            <div class="reg-name">BIT 0 — SCE</div>
+            <div class="reg-val">SYSCALL enable</div>
+          </div>
+          <div class="reg active">
+            <div class="reg-name">BIT 8 — LME ← WE SET</div>
+            <div class="reg-val" style="color:var(--green)">Long Mode Enable ✓</div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">BIT 10 — LMA</div>
+            <div class="reg-val">Long Mode Active<br><span style="color:var(--red);font-size:10px">(set by CPU, not us)</span></div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">BIT 11 — NXE</div>
+            <div class="reg-val">No-Execute enable</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <strong>LME ≠ LMA:</strong> Setting LME just signals <em>intent</em>. The CPU only sets LMA (Long Mode Active)
+        after you also enable paging (PG=1). Hardware enforces both conditions simultaneously.
+      </div>
+    `
+  },
+  {
+    id: 6,
+    label: "Enable Paging",
+    sublabel: "CR0: PG + PE bits → Long Mode ACTIVE",
+    state: {
+      mode: ["LONG MODE ACTIVE!", "on"],
+      bits: ["64 ✓", "on"],
+      ints: ["OFF ✓", "on"],
+      paging: ["ON ✓", "on"],
+      pae: ["ENABLED ✓", "on"],
+      lme: ["ENABLED ✓", "on"],
+      pe: ["ON", "on"],
+      pg: ["ON ✓", "on"],
+      eax: ["CR0 | 0x80000001", "on"],
+      ebx: ["→ multiboot info", "neutral"],
+      esp: ["stack_top (32)", "neutral"],
+      cr3: ["pml4_table ✓", "on"],
+      cs: ["0x08 (still 32!)", "changing"],
+      stack: ["16 KB ready ✓", "on"],
+      gdt: ["GRUB (need 64-bit)", "changing"],
+      pt: ["IDENTITY MAP ✓", "on"]
+    },
+    render: () => `
+      <div class="stage-title">STEP 6 — ENABLE PAGING → LONG MODE ACTIVE</div>
+      <div class="stage-sub">CR0[31]=PG + CR0[0]=PE — the atomic switch</div>
+
+      <div class="callout">
+        <strong>This is the moment of activation.</strong>
+        Setting PG=1 while PE=1 and LME=1 causes the CPU to atomically activate Long Mode.
+        The very next instruction fetch runs with 64-bit page table walks.
+      </div>
+
+      <div class="code-block" data-label="boot.S">
+        <code><span class="cmt"># Enable paging AND ensure Protected Mode is on</span>
+<span class="kw">mov</span> <span class="lit">%cr0</span>, <span class="lit">%eax</span>
+<span class="hl"><span class="kw">or</span>  $<span class="lit">0x80000001</span>, <span class="lit">%eax</span>   <span class="cmt"># PG (bit 31) + PE (bit 0)</span></span>
+<span class="kw">mov</span> <span class="lit">%eax</span>, <span class="lit">%cr0</span>           <span class="cmt"># ← LONG MODE IS NOW ACTIVE</span>
+
+<span class="cmt"># !! CPU is NOW in 64-bit compatibility sub-mode !!</span>
+<span class="cmt"># But CS still has a 32-bit descriptor → need far jump</span></code>
+      </div>
+
+      <div class="cpu-box">
+        <div class="cpu-box-title">▸ CR0 — THE MASTER CONTROL REGISTER</div>
+        <div class="reg-grid">
+          <div class="reg active">
+            <div class="reg-name">BIT 0 — PE</div>
+            <div class="reg-val" style="color:var(--green)">Protected Mode ✓</div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">BIT 1 — MP</div>
+            <div class="reg-val">Math Present</div>
+          </div>
+          <div class="reg">
+            <div class="reg-name">BIT 16 — WP</div>
+            <div class="reg-val">Write Protect</div>
+          </div>
+          <div class="reg active">
+            <div class="reg-name">BIT 31 — PG ← WE SET</div>
+            <div class="reg-val" style="color:var(--green)">Paging ON ✓</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bit-row">
+        <div class="bit-badge on"><div class="bit-dot"></div> PE=1</div>
+        <div class="bit-badge on"><div class="bit-dot"></div> PAE=1</div>
+        <div class="bit-badge on"><div class="bit-dot"></div> LME=1</div>
+        <div class="bit-badge on"><div class="bit-dot"></div> PG=1</div>
+        <div class="bit-badge on" style="border-color:var(--yellow);background:rgba(255,215,0,0.08)"><div class="bit-dot" style="background:var(--yellow);box-shadow:0 0 6px var(--yellow)"></div> LMA=1 (CPU sets this)</div>
+      </div>
+
+      <div class="callout warn">
+        <strong>Not done yet!</strong> We're in Long Mode but the CS (Code Segment) register still holds a 32-bit descriptor from GRUB.
+        We need to reload GDT with a 64-bit descriptor and do a far jump to flush CS.
+      </div>
+    `
+  },
+  {
+    id: 7,
+    label: "64-bit GDT + Far Jump",
+    sublabel: "Load GDT64 · ljmp → flush CS",
+    state: {
+      mode: ["64-bit LONG MODE ✓", "on"],
+      bits: ["64 ✓", "on"],
+      ints: ["OFF ✓", "on"],
+      paging: ["ON ✓", "on"],
+      pae: ["ENABLED ✓", "on"],
+      lme: ["ENABLED ✓", "on"],
+      pe: ["ON", "on"],
+      pg: ["ON ✓", "on"],
+      eax: ["0x10 (data seg)", "on"],
+      ebx: ["→ multiboot info", "neutral"],
+      esp: ["stack_top ✓", "on"],
+      cr3: ["pml4_table ✓", "on"],
+      cs: ["0x08 (64-bit) ✓", "on"],
+      stack: ["16 KB ready ✓", "on"],
+      gdt: ["GDT64 LOADED ✓", "on"],
+      pt: ["IDENTITY MAP ✓", "on"]
+    },
+    render: () => `
+      <div class="stage-title">STEP 7 — 64-BIT GDT + FAR JUMP</div>
+      <div class="stage-sub">lgdt + ljmp $0x08, $long_mode_entry → CS flushed</div>
+
+      <div class="callout">
+        <strong>The GDT (Global Descriptor Table)</strong> defines memory segments. In 64-bit mode,
+        segmentation is mostly flat (all segments cover all memory), but we still need a 64-bit code descriptor
+        so the CPU knows CS is a 64-bit segment. The far jump forces CS to reload.
+      </div>
+
+      <div class="gdt-row" style="border-color:var(--dim)">
+        <div class="gdt-idx">0x00</div>
+        <div class="gdt-name">NULL Descriptor</div>
+        <div class="gdt-bits">required by hardware</div>
+      </div>
+      <div class="gdt-row code-seg">
+        <div class="gdt-idx">0x08</div>
+        <div class="gdt-name" style="color:var(--green)">64-bit Code Segment ← CS loads this</div>
+        <div class="gdt-bits">0x00af9a000000ffff</div>
+      </div>
+      <div class="gdt-row data-seg">
+        <div class="gdt-idx">0x10</div>
+        <div class="gdt-name" style="color:var(--orange)">64-bit Data Segment ← DS/SS/ES</div>
+        <div class="gdt-bits">0x00af92000000ffff</div>
+      </div>
+
+      <div class="code-block" data-label="boot.S">
+        <code><span class="cmt"># Load 64-bit GDT</span>
+<span class="kw">lgdt</span> gdt64_descriptor       <span class="cmt"># load {size, pointer} into GDTR</span>
+
+<span class="cmt"># Far jump: selector 0x08 = code segment, flushes CS</span>
+<span class="hl"><span class="kw">ljmp</span> $<span class="lit">0x08</span>, $long_mode_entry  <span class="cmt"># CS ← 0x08 (64-bit code!)</span></span>
+
+<span class="cmt">────────────────────────────────────────</span>
+gdt64:
+    <span class="kw">.quad</span> 0                    <span class="cmt"># null</span>
+    <span class="kw">.quad</span> <span class="lit">0x00af9a000000ffff</span>  <span class="cmt"># code (L=1, D=0 = 64-bit)</span>
+    <span class="kw">.quad</span> <span class="lit">0x00af92000000ffff</span>  <span class="cmt"># data</span>
+gdt64_descriptor:
+    <span class="kw">.word</span> gdt64_descriptor - gdt64 - 1  <span class="cmt"># size</span>
+    <span class="kw">.quad</span> gdt64               <span class="cmt"># base address</span></code>
+      </div>
+
+      <div class="callout success">
+        <strong>Why far jump?</strong> A regular JMP doesn't reload CS. A far jump (ljmp with selector) forces
+        the CPU to re-read the GDT, pick up the 64-bit code descriptor, and fully commit to 64-bit mode.
+        Without this, the CPU is in an inconsistent state.
+      </div>
+    `
+  },
+  {
+    id: 8,
+    label: "64-bit Entry → kmain",
+    sublabel: ".code64 · RSP set · call kmain",
+    state: {
+      mode: ["64-BIT ✓ ✓ ✓", "on"],
+      bits: ["64 ✓", "on"],
+      ints: ["OFF ✓", "on"],
+      paging: ["ON ✓", "on"],
+      pae: ["ENABLED ✓", "on"],
+      lme: ["ENABLED ✓", "on"],
+      pe: ["ON", "on"],
+      pg: ["ON ✓", "on"],
+      eax: ["0x10", "on"],
+      ebx: ["→ multiboot info", "neutral"],
+      esp: ["RSP = stack_top ✓", "on"],
+      cr3: ["pml4_table ✓", "on"],
+      cs: ["0x08 (64-bit) ✓", "on"],
+      stack: ["RSP ready ✓", "on"],
+      gdt: ["GDT64 LOADED ✓", "on"],
+      pt: ["IDENTITY MAP ✓", "on"]
+    },
+    render: () => `
+      <div class="stage-title">STEP 8 — 64-BIT ENTRY + KMAIN</div>
+      <div class="stage-sub">.code64 · segment registers · RSP · call kmain()</div>
+
+      <div class="callout success">
+        <strong>🎉 We are in 64-bit Long Mode.</strong>
+        All registers are now 64-bit (RAX, RBX, RSP...). The assembler must be told with .code64.
+        We reload segment registers and set RSP, then call our C kernel.
+      </div>
+
+      <div class="code-block" data-label="boot.S — 64-bit code">
+        <code><span class="hl"><span class="kw">.code64</span>                  <span class="cmt"># assembler: emit 64-bit instructions!</span></span>
+long_mode_entry:
+    <span class="cmt"># Reload data segment registers with 64-bit descriptor</span>
+    <span class="kw">mov</span> $<span class="lit">0x10</span>, <span class="lit">%ax</span>
+    <span class="kw">mov</span> <span class="lit">%ax</span>, <span class="lit">%ds</span>
+    <span class="kw">mov</span> <span class="lit">%ax</span>, <span class="lit">%ss</span>
+    <span class="kw">mov</span> <span class="lit">%ax</span>, <span class="lit">%es</span>
+    <span class="kw">xor</span> <span class="lit">%ax</span>, <span class="lit">%ax</span>
+    <span class="kw">mov</span> <span class="lit">%ax</span>, <span class="lit">%fs</span>
+    <span class="kw">mov</span> <span class="lit">%ax</span>, <span class="lit">%gs</span>
+
+<span class="hl">    <span class="kw">mov</span> $stack_top, <span class="lit">%rsp</span>   <span class="cmt"># RSP (64-bit stack pointer)</span></span>
+
+<span class="hl">    <span class="kw">call</span> kmain              <span class="cmt"># → your C kernel! 🚀</span></span>
+
+halt:
+    <span class="kw">hlt</span>
+    <span class="kw">jmp</span> halt</code>
+      </div>
+
+      <div class="cpu-box">
+        <div class="cpu-box-title">▸ VERIFY: WRITE TO VGA BUFFER</div>
+        <div class="code-block" data-label="kmain.c" style="margin-bottom:0">
+          <code><span class="kw">void</span> kmain() {
+    <span class="cmt">// VGA text buffer at 0xB8000</span>
+    <span class="kw">char</span>* vga = (<span class="kw">char</span>*)<span class="lit">0xB8000</span>;
+<span class="hl">    vga[<span class="lit">0</span>] = <span class="lit">'O'</span>;  <span class="cmt">// character</span></span>
+<span class="hl">    vga[<span class="lit">1</span>] = <span class="lit">0x0F</span>; <span class="cmt">// bright white on black</span></span>
+}</code>
+        </div>
+      </div>
+
+      <div class="vga-screen" id="vgaScreen">
+        <span style="color:#555">VGA @ 0xB8000: </span>
+        <span class="vga-char" id="vgaChar">_</span>
+        <span style="color:#333"> ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░</span>
+      </div>
+
+      <div class="callout success">
+        <strong>If you see 'O' on screen → YOUR KERNEL IS RUNNING IN 64-BIT MODE! 🏆</strong><br>
+        You have: CPU mode control · memory translation control · execution environment control.
+        This is the foundation everything else builds on.
+      </div>
+    `,
+    onShow: () => {
+      setTimeout(() => {
+        const c = document.getElementById('vgaChar');
+        if (c) {
+          c.textContent = 'O';
+          c.classList.add('lit');
+        }
+      }, 600);
+    }
+  },
+  {
+    id: 9,
+    label: "Common Failures",
+    sublabel: "What breaks and why",
+    state: {
+      mode: ["64-BIT ✓ ✓ ✓", "on"],
+      bits: ["64 ✓", "on"],
+      ints: ["OFF ✓", "on"],
+      paging: ["ON ✓", "on"],
+      pae: ["ENABLED ✓", "on"],
+      lme: ["ENABLED ✓", "on"],
+      pe: ["ON", "on"],
+      pg: ["ON ✓", "on"],
+      eax: ["0x10", "on"],
+      ebx: ["→ multiboot info", "neutral"],
+      esp: ["RSP = stack_top ✓", "on"],
+      cr3: ["pml4_table ✓", "on"],
+      cs: ["0x08 (64-bit) ✓", "on"],
+      stack: ["RSP ready ✓", "on"],
+      gdt: ["GDT64 LOADED ✓", "on"],
+      pt: ["IDENTITY MAP ✓", "on"]
+    },
+    render: () => `
+      <div class="stage-title">⚠ COMMON FAILURES</div>
+      <div class="stage-sub">Triple faults, hangs, and how to diagnose them</div>
+
+      <div class="err-list">
+        <div class="err-item">
+          <div class="err-icon">💥</div>
+          <div class="err-text">
+            <strong>No identity mapping in page tables</strong>
+            After paging enables, CPU fetches instructions from virtual addresses.
+            If virtual ≠ physical, the CPU immediately reads garbage → triple fault → instant reboot.
+            Fix: always identity map at least the first 2MB.
+          </div>
+        </div>
+        <div class="err-item">
+          <div class="err-icon">💥</div>
+          <div class="err-text">
+            <strong>Wrong CR3 (bad page table address)</strong>
+            CR3 must hold the PHYSICAL address of PML4, correctly aligned to 4KB.
+            A wrong value means every memory access is translated through garbage → triple fault.
+          </div>
+        </div>
+        <div class="err-item">
+          <div class="err-icon">🔒</div>
+          <div class="err-text">
+            <strong>Missing far jump after loading GDT64</strong>
+            Without ljmp, CS still holds the 32-bit GRUB descriptor even though paging is 64-bit.
+            The CPU is in a schizophrenic state — some parts 64-bit, CS thinks 32-bit → undefined behavior.
+          </div>
+        </div>
+        <div class="err-item">
+          <div class="err-icon">💀</div>
+          <div class="err-text">
+            <strong>No stack before first function call</strong>
+            Even a single CALL instruction will push the return address and read ESP.
+            Undefined ESP → pushes to random memory → corrupts kernel → instant crash.
+            Always set ESP as the very first thing.
+          </div>
+        </div>
+        <div class="err-item">
+          <div class="err-icon">🚫</div>
+          <div class="err-text">
+            <strong>PAE not enabled before Long Mode</strong>
+            The CPU checks: PAE=1 before allowing LME to activate with paging.
+            Skipping CR4.PAE → wrmsr on EFER silently fails or trips a GP fault.
+          </div>
+        </div>
+        <div class="err-item">
+          <div class="err-icon">⚡</div>
+          <div class="err-text">
+            <strong>.code64 missing in 64-bit entry</strong>
+            The assembler encodes differently for 32 vs 64-bit. Without .code64, your 64-bit entry
+            function is encoded as 32-bit instructions → completely wrong opcodes → crash.
+          </div>
+        </div>
+      </div>
+
+      <div class="callout success">
+        <strong>Debugging tip:</strong> Use QEMU with <code>-d int,cpu_reset</code> to see triple faults.
+        QEMU will print the CPU state before reset, showing you exactly which instruction caused the fault
+        and what CR3/CR0/EFER looked like at the time.
+      </div>
+    `
+  }
+];
+
+const urlStep = Number.parseInt(new URLSearchParams(window.location.search).get('step') || '0', 10);
+let current = Number.isNaN(urlStep) ? 0 : Math.min(Math.max(urlStep, 0), steps.length - 1);
+let autoInterval = null;
+
+function buildStepList() {
+  const list = document.getElementById('stepList');
+  list.innerHTML = steps.map((s, i) => `
+    <div class="step-item ${i === 0 ? 'active' : ''}" id="sitem-${i}" onclick="goTo(${i})">
+      <div class="step-num">${i}</div>
+      <div class="step-label"><strong>${s.label}</strong>${s.sublabel}</div>
+    </div>
+  `).join('');
+}
+
+function updateState(state) {
+  const map = {
+    mode: 's-mode', bits: 's-bits', ints: 's-ints', paging: 's-paging',
+    pae: 's-pae', lme: 's-lme', pe: 's-pe', pg: 's-pg',
+    eax: 's-eax', ebx: 's-ebx', esp: 's-esp', cr3: 's-cr3',
+    cs: 's-cs', stack: 's-stack', gdt: 's-gdt', pt: 's-pt'
+  };
+  for (const [key, id] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (el && state[key]) {
+      el.textContent = state[key][0];
+      el.className = 'state-val ' + state[key][1];
+    }
+  }
+}
+
+function goTo(idx) {
+  current = idx;
+  syncUrl();
+  render();
+}
+
+function render() {
+  const s = steps[current];
+
+  // Update viz
+  document.getElementById('viz').innerHTML = `<div class="stage visible">${s.render()}</div>`;
+
+  // Call onShow if exists
+  if (s.onShow) s.onShow();
+
+  // Update step list
+  steps.forEach((_, i) => {
+    const el = document.getElementById(`sitem-${i}`);
+    if (!el) return;
+    el.className = 'step-item';
+    if (i < current) el.classList.add('done');
+    if (i === current) el.classList.add('active');
+  });
+
+  // Update state panel
+  updateState(s.state);
+
+  // Update controls
+  document.getElementById('btnPrev').disabled = current === 0;
+  document.getElementById('btnNext').disabled = current === steps.length - 1;
+  document.getElementById('stepCounter').textContent = `${current} / ${steps.length - 1}`;
+  document.getElementById('progressFill').style.width = `${(current / (steps.length - 1)) * 100}%`;
+}
+
+function syncUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.set('step', current);
+  window.history.replaceState({}, '', url);
+}
+
+function nextStep() {
+  if (current < steps.length - 1) { current++; syncUrl(); render(); }
+}
+
+function prevStep() {
+  if (current > 0) { current--; syncUrl(); render(); }
+}
+
+function reset() {
+  stopAuto();
+  current = 0;
+  syncUrl();
+  render();
+}
+
+function toggleAuto() {
+  const btn = document.getElementById('btnAuto');
+  if (autoInterval) {
+    stopAuto();
+  } else {
+    btn.textContent = '⏸ PAUSE';
+    btn.className = 'btn danger';
+    autoInterval = setInterval(() => {
+      if (current >= steps.length - 1) { stopAuto(); return; }
+      current++;
+      syncUrl();
+      render();
+    }, 3500);
+  }
+}
+
+function stopAuto() {
+  clearInterval(autoInterval);
+  autoInterval = null;
+  const btn = document.getElementById('btnAuto');
+  btn.textContent = '▶▶ AUTO';
+  btn.className = 'btn success';
+}
+
+// Keyboard nav
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextStep();
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') prevStep();
+  if (e.key === 'r' || e.key === 'R') reset();
+});
+
+buildStepList();
+render();
+</script>
+</body>
+</html>

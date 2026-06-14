@@ -1,0 +1,126 @@
+---
+id: core-06-filesystems-shell
+title: "Chapter 7: Filesystems and Shell"
+slug: /core/06-filesystems-shell
+sidebar_position: 11
+---
+
+# Filesystems and Shell
+
+Once the kernel can talk to storage and user space, it can expose files and a usable interactive shell.
+
+## Q&A
+
+**Q: Why is VFS useful?**  
+A: It gives the kernel one interface for different storage backends.
+
+**Q: What is the shell's job?**  
+A: Read commands from the user and turn them into kernel requests.
+
+**Q: Why mix a TAR ramdisk with ext2?**  
+A: One is convenient for boot-time resources, the other is for persistent block storage.
+
+## Simple example
+
+Think of the filesystem as a library.
+
+- the VFS is the front desk
+- the storage driver is the book delivery system
+- the shell is the librarian you talk to
+
+You ask for a file by name, and the kernel figures out where the data lives.
+
+## What this project does
+
+The storage and filesystem path includes:
+
+- ATA block access
+- TAR-based ramdisk support
+- VFS file descriptor management
+- ext2 support for persistent storage
+- shell execution as a user-space program
+
+## Real code reference
+
+- `src/kernel/fs/vfs.c`
+- `src/kernel/fs/tar.c`
+- `src/kernel/fs/ext2.c`
+- `src/kernel/drivers/ata.c`
+- `src/apps/shell/main.c`
+
+## How file access works here
+
+1. user space calls `open()` or `sys_open()`
+2. VFS decides whether the target is TTY, TAR, or another backend
+3. the driver reads data from storage
+4. the bytes are returned to the caller
+
+## Diagram
+
+```text
+user command -> shell -> syscalls -> VFS -> storage driver -> data
+```
+
+## Small code map
+
+- `vfs_init()` prepares file descriptor state.
+- `vfs_open()` resolves `TTY` or TAR files.
+- `vfs_read()` reads from TTY or storage.
+- `vfs_write()` writes to TTY or storage.
+- `vfs_readdir()` walks the ramdisk entries.
+
+## Shell example
+
+The user-space shell:
+
+- prints a prompt
+- reads a command line
+- splits it into arguments
+- runs built-in commands like `help`, `info`, and `echo`
+- calls `sys_exec()` for external programs
+
+## Why it matters
+
+This is the first place where the kernel starts to feel like an operating system instead of just a booting kernel.
+
+## What can go wrong
+
+- wrong sector reads can produce bad file data
+- VFS descriptor bugs can leak handles
+- shell input issues can make the interface appear frozen
+
+## Practical takeaway
+
+Filesystems give the kernel persistent data access. The shell gives humans a way to use it.
+
+## Line by line example
+
+```c
+if (strcmp(path, "/dev/tty") == 0 || strcmp(path, "dev/tty") == 0) {
+```
+
+- route terminal access to the TTY backend.
+
+```c
+if (tar_find_file(normalized, &lba, &size) != 0) {
+```
+
+- search the TAR ramdisk for a file name.
+
+```c
+ata_read_sector(lba, sector_buf);
+```
+
+- read one disk sector into a temporary buffer before copying data out.
+
+```c
+int fd = vfs_open(filename);
+```
+
+- open a file through the VFS and get back a descriptor.
+
+```c
+vfs_read(fd, buf, sz);
+```
+
+- read the file contents into RAM.

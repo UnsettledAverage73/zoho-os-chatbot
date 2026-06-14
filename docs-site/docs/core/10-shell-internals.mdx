@@ -1,0 +1,153 @@
+---
+id: core-10-shell-internals
+title: "Chapter 11: Shell Internals"
+slug: /core/10-shell-internals
+sidebar_position: 15
+---
+
+# Shell Internals
+
+This chapter explains how the interactive shell turns keyboard input into commands, output, and new tasks.
+
+## Q&A
+
+**Q: What is the shell's job?**  
+A: Read input, parse commands, call kernel services, and render output.
+
+**Q: Why does it live in user space?**  
+A: So the kernel can stay focused on privileged work while the shell stays replaceable.
+
+**Q: What makes this shell richer than a simple line reader?**  
+A: History, scrollback, networking commands, process commands, and GUI-aware output.
+
+## Simple example
+
+Think of the shell as a terminal operator.
+
+- user types
+- shell parses
+- kernel services execute
+- shell prints the result back
+
+## What this project does
+
+The shell:
+
+- renders text into a GUI window
+- keeps a prompt and input buffer
+- maintains command history
+- supports scrollback
+- calls kernel syscalls for files, processes, memory, stats, and networking
+- supports built-in commands and external programs
+
+## Real code reference
+
+- `src/kernel/core/shell.c`
+- `src/apps/shell/main.c`
+
+## Diagram
+
+```text
+keyboard input -> shell buffer -> command parser -> syscall / exec -> output
+```
+
+## Small code map
+
+- `shell_set_window()` connects the shell to a window and prepares the terminal grid.
+- `shell_prompt()` draws the prompt text.
+- `shell_execute()` routes the final command string.
+- `shell_trim_command()` cleans whitespace and line endings.
+- `shell_render_scrollback_view()` redraws past output.
+
+## Line by line sample
+
+```c
+shell_trim_command(cmd);
+if (cmd[0] == '\0') {
+    shell_prompt();
+    return;
+}
+```
+
+- clean the command string.
+- if it is empty, show a new prompt and stop.
+
+```c
+if (strcmp(cmd, "help") == 0) { ... }
+else if (strcmp(cmd, "monitor") == 0) { ... }
+else if (memcmp(cmd, "exec ", 5) == 0) { ... }
+```
+
+- handle built-ins first.
+- fall back to program execution or other commands.
+
+```c
+if (task_exec_file(cmd)) {
+    shell_print("Process started.\n");
+} else {
+    shell_print("Unknown command or file: ");
+    shell_print(cmd);
+    shell_print("\n");
+}
+```
+
+- try to run the command as a file.
+- show an error if it is not found or cannot be launched.
+
+## Why the GUI matters
+
+This shell is not just text on serial. It is drawn inside a window, which means the graphics and window manager are part of the user experience.
+
+## What can go wrong
+
+- incorrect input parsing can break commands
+- bad history management can corrupt input lines
+- missing window backing storage can stop rendering
+
+## Practical takeaway
+
+The shell is the visible end of the whole OS stack. It converts kernel capabilities into something a user can actually drive.
+
+## Line by line example
+
+```c
+shell_trim_command(cmd);
+if (cmd[0] == '\0') {
+    shell_prompt();
+    return;
+}
+```
+
+- clean up the typed command.
+- if it is empty, print a new prompt.
+
+```c
+if (strcmp(cmd, "help") == 0) { ... }
+```
+
+- handle built-in commands before trying to run an external program.
+
+```c
+if (task_exec_file(cmd)) {
+    shell_print("Process started.\n");
+} else {
+    shell_print("Unknown command or file: ");
+    shell_print(cmd);
+    shell_print("\n");
+}
+```
+
+- launch the command if it is a file.
+- otherwise report an error to the user.
+
+```c
+shell_prompt();
+```
+
+- print the prompt and reset the input cursor.
+
+```c
+shell_render_scrollback_view();
+```
+
+- redraw the saved history buffer when the user scrolls back.

@@ -1,0 +1,131 @@
+---
+id: core-09-networking
+title: "Chapter 10: Networking"
+slug: /core/09-networking
+sidebar_position: 14
+---
+
+# Networking
+
+The network stack brings up the E1000 NIC, obtains an address, and provides UDP/TCP communication to user space.
+
+## Q&A
+
+**Q: What is the first network device here?**  
+A: Intel E1000.
+
+**Q: How does the kernel get an IP address?**  
+A: Through DHCP.
+
+**Q: What protocols are implemented?**  
+A: Ethernet, ARP, IPv4, UDP, and TCP.
+
+## Simple example
+
+Think of networking like sending envelopes through a post office.
+
+- Ethernet is the envelope
+- ARP finds the mailbox address
+- IPv4 is the street address
+- UDP and TCP are different delivery rules
+
+## What this project does
+
+The networking code:
+
+- initializes the E1000 NIC
+- maintains an ARP cache
+- sends and handles ARP requests/replies
+- supports UDP bindings
+- supports TCP connections and listeners
+- runs DHCP discovery, offer, request, and lease renewal
+
+## Real code reference
+
+- `src/kernel/net/net.c`
+- `src/kernel/net/dhcp.c`
+- `src/kernel/net/tcp.c`
+
+## Diagram
+
+```text
+E1000 -> Ethernet -> ARP/IPv4 -> UDP/TCP -> shell commands
+```
+
+## Small code map
+
+- `net_init()` reads the NIC MAC address and resets state.
+- `net_send_arp_request()` asks who owns an IP address.
+- `net_send_ipv4()` builds an IPv4 frame.
+- `dhcp_discover()` starts address acquisition.
+- `dhcp_handle()` parses DHCP offers and acknowledgements.
+- `tcp_connect()` starts an outbound TCP handshake.
+- `tcp_listen()` accepts inbound connections.
+
+## Line by line sample
+
+```c
+e1000_get_mac(my_mac);
+memset(arp_cache, 0, sizeof(arp_cache));
+```
+
+- read the NIC hardware address.
+- clear cached network state before using it.
+
+```c
+dhcp_state = DHCP_STATE_SELECTING;
+```
+
+- start the DHCP discovery flow.
+
+## How the shell uses networking
+
+The shell can call commands like `net`, `ping`, `udp`, `tcp`, and `tlisten` to exercise the network stack directly.
+
+## What can go wrong
+
+- ARP failures prevent IPv4 delivery
+- DHCP failures leave the interface without a usable IP
+- TCP handshake bugs stop connections from forming
+
+## Practical takeaway
+
+Networking is built in layers. If ARP fails, IP fails; if DHCP fails, user-facing network commands fail.
+
+## Line by line example
+
+```c
+e1000_get_mac(my_mac);
+```
+
+- read the NIC hardware address.
+
+```c
+net_send_eth(broadcast_mac, ETHERTYPE_ARP, &req, sizeof(arp_packet_t));
+```
+
+- send an ARP request as an Ethernet broadcast.
+
+```c
+dhcp_state = DHCP_STATE_SELECTING;
+```
+
+- start DHCP discovery.
+
+```c
+net_send_tcp(ip, conn->local_port, port, conn->seq, 0, TCP_FLAG_SYN, NULL, 0);
+```
+
+- send the SYN packet to begin a TCP handshake.
+
+```c
+dhcp_send_request(dhcp_offered_ip, dhcp_server_ip, 1);
+```
+
+- request the offered IP address from the DHCP server.
+
+```c
+net_flush_pending_for_ip(arp->src_ip);
+```
+
+- send queued packets once ARP resolution completes.

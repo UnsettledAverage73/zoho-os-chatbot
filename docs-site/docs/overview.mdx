@@ -1,0 +1,67 @@
+---
+id: overview
+title: Project Overview
+slug: /overview
+sidebar_position: 2
+---
+
+# Project Overview
+
+Zoho OS is a small x86_64 kernel intended for learning and experimentation. It is not trying to be a full production operating system. Instead, it focuses on a complete but understandable path from firmware handoff to a usable shell.
+
+## What the project includes
+
+- a Multiboot2-compatible boot path
+- a 32-bit bootstrap that switches into long mode
+- physical and virtual memory managers
+- task scheduling and SMP bring-up
+- system calls for user space
+- basic storage, PCI, graphics, input, and network support
+- a user-space shell and tiny libc
+
+## What the project is designed to show
+
+The codebase is organized so you can see the major OS layers in order:
+
+1. firmware and bootloader handoff
+2. assembly-level CPU setup
+3. kernel entry in C
+4. memory management
+5. interrupts, timers, and tasking
+6. device discovery and drivers
+7. user-space execution
+
+## Key entry points
+
+| Area | File | Role |
+| --- | --- | --- |
+| Boot header | `src/boot/header.asm` | Makes the kernel visible to GRUB |
+| 32-bit bootstrap | `src/boot/main.asm` | Sets up stack, paging, and long mode |
+| 64-bit entry | `src/boot/long_mode_init.asm` | Clears segment state and calls `kmain()` |
+| Kernel main | `src/kernel/core/main.c` | Initializes the whole system |
+| PMM | `src/kernel/mm/pmm.c` | Tracks physical memory frames |
+| VMM | `src/kernel/mm/vmm.c` | Manages page tables and virtual mappings |
+| Syscalls | `src/kernel/core/syscall.c` | Exposes kernel services to user space |
+| Shell | `src/apps/shell/main.c` | Provides the first interactive user program |
+
+## Boot chain in one line
+
+`BIOS/UEFI -> GRUB -> Multiboot2 -> 32-bit bootstrap -> paging -> long mode -> kmain()`
+
+## Recommended reading order
+
+1. [Build and run](/build-and-run)
+2. [Boot sequence overview](/boot/00-overview)
+3. [64-bit entry and `kmain`](/boot/09-64-bit-entry)
+4. [CPU feature checks](/boot/12-cpu-checks)
+5. [Architecture guide](/architecture)
+6. [GDT and TSS](/core/00-gdt-tss)
+7. [IDT and interrupts](/core/01-idt-interrupts)
+8. [PMM and VMM](/core/02-pmm)
+9. [Tasking and SMP](/core/04-tasking-smp)
+10. [Syscalls and user space](/core/05-syscalls-userspace)
+11. [Filesystems and shell](/core/06-filesystems-shell)
+12. [Graphics and window manager](/core/07-graphics-window)
+13. [PCI and storage](/core/08-pci-storage)
+14. [Networking](/core/09-networking)
+15. [Shell internals](/core/10-shell-internals)

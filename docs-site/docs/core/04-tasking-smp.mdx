@@ -1,0 +1,133 @@
+---
+id: core-04-tasking-smp
+title: "Chapter 5: Tasking and SMP"
+slug: /core/04-tasking-smp
+sidebar_position: 9
+---
+
+# Tasking and SMP
+
+Tasking decides which program runs next. SMP extends that logic across multiple CPUs.
+
+## Q&A
+
+**Q: What is a task in this kernel?**  
+A: A schedulable execution context with its own state and address space.
+
+**Q: What is SMP?**  
+A: Symmetric multiprocessing, where multiple CPU cores run kernel work in parallel.
+
+**Q: Why do we need per-CPU runqueues?**  
+A: To keep scheduling local and reduce contention.
+
+## Simple example
+
+Imagine an office with several workers.
+
+- each worker is a CPU core
+- each open task is a job ticket
+- the scheduler is the manager who assigns work
+
+If one worker gets too much work and the others are idle, the office is inefficient. That is why load balancing matters.
+
+## What this project does
+
+The task system:
+
+- creates kernel tasks
+- creates user tasks with separate user stacks
+- creates idle tasks per CPU
+- keeps per-CPU runqueues
+- picks the least loaded CPU for a new task
+
+The SMP bring-up path:
+
+- discovers APs through ACPI
+- sends INIT/SIPI IPIs
+- runs the trampoline code on each AP
+- initializes the per-CPU scheduler state
+
+## Real code reference
+
+- `src/kernel/core/task.c`
+- `src/kernel/arch/x86_64/smp.c`
+- `src/kernel/arch/x86_64/trampoline.asm`
+
+## Why it matters
+
+The kernel would still boot without tasking, but it would not behave like a usable multitasking system.
+
+Tasking gives you:
+
+- background kernel work
+- user programs
+- responsive timers and input handling
+- multicore execution
+
+## Practical example
+
+When `task_exec_file("bin/shell")` runs, the kernel:
+
+1. loads the ELF program
+2. builds its address space
+3. creates a task structure
+4. places it on a CPU runqueue
+5. schedules it like any other runnable process
+
+## Diagram
+
+```text
+task creation -> choose least-loaded CPU -> enqueue -> timer tick -> scheduler runs task
+```
+
+## Small code map
+
+- `task_init_global()` resets task IDs and locks.
+- `task_init_per_cpu()` creates the idle task for each CPU.
+- `task_create()` builds a kernel task stack frame.
+- `task_create_user()` builds a user task with a user stack.
+- `smp_init()` wakes up APs and points them at `ap_main()`.
+
+## What can go wrong
+
+- bad stack setup can crash the task at first context switch
+- wrong CPU selection can unbalance load
+- AP startup errors can leave some cores offline
+
+## Practical takeaway
+
+Tasking decides who runs. SMP decides how many CPUs can run at once.
+
+## Line by line example
+
+```c
+new_task->rsp = (uint64_t)stack;
+new_task->state = TASK_READY;
+```
+
+- record the task's starting stack pointer.
+- mark it ready for scheduling.
+
+```c
+cpu_t* target = pick_least_loaded_cpu();
+```
+
+- choose the CPU with the smallest current workload.
+
+```c
+lapic_send_ipi(apic_id, 0x00000500);
+```
+
+- send the INIT IPI that begins AP bring-up.
+
+```c
+new_task->pml4 = vmm_create_address_space();
+```
+
+- create a private address space for the new user task.
+
+```c
+*(--stack) = (uint64_t)entry; // RIP
+```
+
+- push the initial instruction pointer onto the task stack frame.

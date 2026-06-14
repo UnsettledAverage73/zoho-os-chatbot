@@ -1,0 +1,86 @@
+---
+id: build-and-run
+title: Build and Run
+slug: /build-and-run
+sidebar_position: 3
+---
+
+# Build and Run
+
+This page explains the tooling needed to build the project and boot it in QEMU.
+
+## Prerequisites
+
+You need:
+
+- `gcc`
+- `nasm`
+- `ld`
+- `make`
+- `grub-mkrescue`
+- `xorriso`
+- `mtools`
+- `qemu-system-x86_64`
+
+On Ubuntu or Debian, the repository README recommends:
+
+```bash
+sudo apt update
+sudo apt install build-essential nasm qemu-system-x86 grub-pc-bin grub-common xorriso mtools
+```
+
+## Build commands
+
+From the repository root:
+
+```bash
+make iso
+```
+
+This:
+
+- builds `kernel.bin`
+- builds the user-space shell
+- generates a ramdisk image
+- writes `grub.cfg`
+- calls `grub-mkrescue`
+- produces `zoho_os.iso`
+
+## Run commands
+
+```bash
+make run
+```
+
+That starts QEMU with:
+
+- the generated ISO
+- the raw disk image
+- serial output on stdio
+- SMP enabled
+- USB tablet support
+
+## What boot media contains
+
+The generated ISO includes:
+
+- GRUB boot files
+- `kernel.bin`
+- `grub.cfg`
+
+The disk image includes:
+
+- a TAR ramdisk
+- the user-space shell binary
+- a sample file for VFS testing
+
+## Common build flow
+
+1. install the prerequisites
+2. run `make iso`
+3. run `make run`
+4. watch the serial output and screen output in QEMU
+
+## Why GRUB is needed here
+
+GRUB is not reimplemented by the project. It is used as the bootloader that loads the Multiboot2 kernel image and jumps into the bootstrap entry point.

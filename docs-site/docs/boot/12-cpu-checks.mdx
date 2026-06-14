@@ -1,0 +1,148 @@
+---
+id: boot-12-cpu-checks
+title: "CPU Feature Checks"
+slug: /boot/12-cpu-checks
+sidebar_position: 12
+---
+
+# CPU Feature Checks
+
+Before the kernel turns on paging and long mode, it verifies that the CPU can actually support the features it needs. This happens in `src/boot/main.asm` right after the stack is ready and before page tables are built.
+
+## Q&A
+
+**Q: Why check the CPU first?**  
+A: Because the kernel should fail early if the hardware cannot support the required instructions.
+
+**Q: What are the two checks here?**  
+A: Whether the CPU supports `CPUID`, and whether it supports long mode.
+
+**Q: Why not just assume modern hardware?**  
+A: Because bootstrap code should be defensive and explain failures clearly.
+
+## Why this check exists
+
+- Some very old x86 CPUs do not support `CPUID`.
+- Some CPUs support `CPUID` but not 64-bit long mode.
+- If the kernel skips these checks, it can try to enable features the hardware does not have and crash immediately.
+
+## Real code reference
+
+`src/boot/main.asm`:
+
+```asm
+check_cpuid:
+    pushfd
+    pop eax
+    mov ecx, eax
+    xor eax, 1 << 21
+    push eax
+    popfd
+    pushfd
+    pop eax
+    push ecx
+    popfd
+    cmp eax, ecx
+    je .no_cpuid
+    ret
+
+check_long_mode:
+    mov eax, 0x80000000
+    cpuid
+    cmp eax, 0x80000001
+    jb .no_long_mode
+    mov eax, 0x80000001
+    cpuid
+    test edx, 1 << 29
+    jz .no_long_mode
+    ret
+```
+
+## Diagram
+
+```text
+CPU check path
+  -> can toggle CPUID bit?
+  -> can report long mode?
+  -> continue boot only if both are yes
+```
+
+## What `check_cpuid` does
+
+The code tries to toggle the `ID` bit in `EFLAGS`.
+
+- If the bit changes, the CPU supports `CPUID`.
+- If the bit does not change, the CPU is too old for the boot path and the kernel stops.
+
+This is a classic compatibility test for x86 bootstrap code.
+
+### Line by line
+
+- save current flags
+- toggle the ID bit
+- read flags again
+- compare the result
+- fail if the bit did not change
+
+In register terms:
+
+1. `pushfd` saves the current `EFLAGS`.
+2. `pop eax` copies them into `EAX`.
+3. `xor eax, 1 << 21` flips the ID bit.
+4. `push eax` / `popfd` writes the modified flags back.
+5. The second `pushfd` / `pop eax` reads the result.
+6. If the bit did not change, `CPUID` is not supported.
+
+## What `check_long_mode` does
+
+The code asks the CPU for its extended feature leafs:
+
+- `0x80000000` tells us the highest supported extended leaf.
+- `0x80000001` contains feature bits for x86-64 support.
+- Bit 29 in `EDX` must be set for long mode support.
+
+If that bit is missing, the kernel cannot continue to the 64-bit transition.
+
+### Line by line
+
+- ask for the highest extended CPUID leaf
+- ensure the long-mode feature leaf exists
+- read the feature bits
+- test bit 29 in `EDX`
+- fail if the bit is not present
+
+In register terms:
+
+1. `mov eax, 0x80000000` asks for the highest extended leaf.
+2. `cpuid` writes the result back.
+3. `cmp eax, 0x80000001` checks that the long-mode leaf exists.
+4. `mov eax, 0x80000001` selects the feature leaf.
+5. `test edx, 1 << 29` checks the long-mode bit.
+6. If the bit is not set, the CPU cannot run this kernel.
+
+## Failure behavior
+
+This project uses simple VGA markers and error codes during bootstrap.
+
+- `M` means the Multiboot handoff was wrong.
+- `C` means the CPU does not support `CPUID`.
+- `L` means the CPU does not support long mode.
+
+That makes early boot failures easier to spot before serial logging is available.
+
+## Simple summary
+
+- `check_cpuid` asks, "Can this CPU answer feature queries?"
+- `check_long_mode` asks, "Can this CPU run 64-bit code?"
+- Only if both answers are yes does the kernel continue to paging setup.
+
+## Why this matters for the next steps
+
+The later boot stages depend on these checks being true:
+
+- `CR4.PAE` must be available
+- long mode must be supported by the CPU
+- paging must be enabled in the right sequence
+- the 64-bit GDT and far jump must happen after that
+
+Without these checks, the kernel would be trying to build a 64-bit environment on unsupported hardware.

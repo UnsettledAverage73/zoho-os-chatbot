@@ -1,0 +1,94 @@
+---
+id: boot-09-64-bit-entry
+title: "Step 8: 64-bit Entry and kmain"
+slug: /boot/09-64-bit-entry
+sidebar_position: 10
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 8: 64-bit Entry and `kmain`
+
+Once the far jump lands in 64-bit code, the bootstrap assembly can normalize segment state and hand off to the C kernel entry.
+
+<BootstrapStepFrame step={8} title="Step 8 visualizer" />
+
+## Q&A
+
+**Q: What is the job of the 64-bit entry stub?**  
+A: Clean up CPU state and pass control to `kmain()`.
+
+**Q: Why do we still use assembly here?**  
+A: Because the handoff from boot mode to C needs direct CPU setup.
+
+**Q: What should happen after `kmain()` starts?**  
+A: The kernel should initialize memory, interrupts, devices, tasks, and user space.
+
+## Simple example
+
+This is the “office is open now” moment.
+
+- the desk is ready
+- the room is in the right mode
+- the kernel can now switch from assembly setup to normal C initialization
+
+The assembly stub is still important, but its job becomes simple: clean up segment state and call the main kernel function.
+
+## Why the segment registers are cleared
+
+In long mode, most segmentation is simplified. Clearing the data segment registers here avoids carrying old bootstrap assumptions into the kernel proper.
+
+## What `kmain()` becomes responsible for
+
+Once control reaches `kmain()`, the kernel starts the real system bring-up:
+
+- log output
+- physical memory setup
+- virtual memory setup
+- ACPI and APIC
+- interrupts
+- timers
+- tasking
+- drivers
+- filesystems
+- graphics
+- shell
+
+## Real code reference
+
+`src/boot/long_mode_init.asm`:
+
+```asm
+long_mode_start:
+    mov ax, 0
+    mov ss, ax
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+mov gs, ax
+
+    call kmain
+```
+
+### Line by line
+
+- `mov ax, 0` loads the null selector.
+- `mov ss, ax` clears the stack segment.
+- `mov ds/es/fs/gs, ax` clears the remaining segment registers.
+- `call kmain` enters the C kernel.
+
+### Why this stub is so small
+
+The boot code has already done the hard work:
+
+- paging is live
+- long mode is active
+- the 64-bit GDT is loaded
+
+So the remaining job is to leave the CPU in a clean state and jump into C.
+
+`src/kernel/main.c` then initializes the higher-level kernel systems such as serial logging, GDT, IDT, memory management, PIT, heap, tasks, and the shell.
+
+## Practical takeaway
+
+This is the bridge between “CPU setup” and “kernel logic.”

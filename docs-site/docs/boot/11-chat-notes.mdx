@@ -1,0 +1,75 @@
+---
+id: boot-11-chat-notes
+title: "Step 11: Boot Chat Notes"
+slug: /boot/11-chat-notes
+sidebar_position: 13
+---
+
+# Boot Chat Notes
+
+This page saves the boot-process explanation we walked through in chat in a short, reusable form.
+
+## What the project uses for booting
+
+- The machine provides **BIOS or UEFI firmware**.
+- The boot media provides **GRUB**.
+- The kernel provides a **Multiboot2 header** so GRUB accepts it.
+- The kernel then switches from 32-bit setup to 64-bit long mode.
+
+## Q&A
+
+**Q: Do I need GRUB installed on the target machine?**  
+A: No. GRUB is included in the bootable ISO or USB you create.
+
+**Q: What does the target machine need?**  
+A: BIOS or UEFI firmware, which already exists on the motherboard.
+
+**Q: What does the build machine need?**  
+A: GRUB tooling such as `grub-mkrescue`.
+
+## Very short mental model
+
+- firmware starts the machine
+- GRUB loads the kernel
+- the kernel prepares its own CPU mode and memory
+- `kmain()` starts the operating system proper
+
+## Simple boot flow
+
+1. Power on the machine.
+2. BIOS or UEFI firmware starts first.
+3. Firmware loads GRUB from the USB/ISO.
+4. GRUB reads `kernel.bin`.
+5. GRUB checks the Multiboot2 header in `src/boot/header.asm`.
+6. GRUB jumps into `src/boot/main.asm`.
+7. The bootstrap code sets up a stack, paging, and long mode.
+8. The 64-bit stub in `src/boot/long_mode_init.asm` calls `kmain()`.
+9. `src/kernel/core/main.c` initializes memory, drivers, tasks, syscalls, graphics, and the shell.
+
+## Example summary
+
+If you want to explain the whole sequence in one sentence:
+
+> GRUB loads the kernel, the bootstrap code prepares paging and long mode, and `kmain()` brings the OS to life.
+
+## Important clarification
+
+- GRUB is **not** written by this project.
+- GRUB is **installed on the development machine** as a build tool.
+- `make iso` uses `grub-mkrescue` to package GRUB into the ISO.
+- The target machine does **not** need GRUB installed separately when booting the USB or ISO.
+
+## Key files
+
+- `src/boot/header.asm`
+- `src/boot/main.asm`
+- `src/boot/long_mode_init.asm`
+- `src/kernel/core/main.c`
+- `Makefile`
+
+## Easy memory aid
+
+- **Header** = permission slip for GRUB.
+- **Bootstrap** = prepare stack, memory, and CPU mode.
+- **Long mode init** = enter 64-bit state.
+- **kmain()** = start the real kernel work.

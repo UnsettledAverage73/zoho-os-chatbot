@@ -1,0 +1,85 @@
+---
+id: boot-06-enable-long-mode
+title: "Step 5: Enable Long Mode in EFER"
+slug: /boot/06-enable-long-mode
+sidebar_position: 7
+---
+
+import BootstrapStepFrame from '@site/src/components/BootstrapStepFrame';
+
+# Step 5: Enable Long Mode in EFER
+
+Setting the long mode enable bit does not switch the CPU into 64-bit execution by itself. It prepares the processor so that the later paging transition can activate long mode.
+
+<BootstrapStepFrame step={5} title="Step 5 visualizer" />
+
+## Q&A
+
+**Q: What is `EFER`?**  
+A: A model-specific register that controls extended CPU features, including long mode.
+
+**Q: What does `LME` mean?**  
+A: Long Mode Enable.
+
+**Q: Why not just set paging and skip this step?**  
+A: Because the CPU checks the long-mode enable bit as part of the transition.
+
+## Simple example
+
+This is like turning on the “64-bit mode allowed” setting before opening the final door.
+
+- the CPU is now configured to accept long mode
+- but it is still not executing 64-bit instructions yet
+
+You need this preparation before paging is enabled.
+
+## Why this is separate from paging
+
+People often expect one instruction to “enter 64-bit mode,” but the hardware uses a sequence:
+
+1. enable PAE
+2. build page tables
+3. set long mode enable in `EFER`
+4. turn paging on
+5. load a 64-bit code segment
+6. far jump into it
+
+This step is specifically the “prepare long mode” phase.
+
+## Real code reference
+
+`src/boot/main.asm` uses the `EFER` model-specific register:
+
+```asm
+mov ecx, 0xC0000080
+rdmsr
+or eax, 1 << 8
+wrmsr
+```
+
+### Line by line
+
+- `mov ecx, 0xC0000080` selects the `EFER` MSR.
+- `rdmsr` reads the current value into `EDX:EAX`.
+- `or eax, 1 << 8` turns on long mode enable.
+- `wrmsr` writes the updated value back.
+
+This is the point where the CPU is configured for long mode, but not yet executing it.
+
+## Practical takeaway
+
+If `EFER.LME` is not set before paging is enabled, the hardware will not complete the transition to 64-bit execution.
+
+## Line by line example
+
+```asm
+mov ecx, 0xC0000080
+rdmsr
+or eax, 1 << 8
+wrmsr
+```
+
+- `mov ecx, 0xC0000080` selects the `EFER` MSR address.
+- `rdmsr` reads the current MSR value into `EDX:EAX`.
+- `or eax, 1 << 8` enables the long mode bit.
+- `wrmsr` writes the updated value back into the processor.

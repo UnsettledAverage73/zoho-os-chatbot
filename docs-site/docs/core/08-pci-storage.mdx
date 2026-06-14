@@ -1,0 +1,131 @@
+---
+id: core-08-pci-storage
+title: "Chapter 9: PCI and Storage"
+slug: /core/08-pci-storage
+sidebar_position: 13
+---
+
+# PCI and Storage
+
+This chapter covers how the kernel discovers hardware and talks to the disk.
+
+## Q&A
+
+**Q: What does PCI discovery do?**  
+A: It scans the machine for devices and identifies controllers like E1000 and xHCI.
+
+**Q: What does the ATA driver do?**  
+A: It reads and writes raw sectors on the disk.
+
+**Q: Why is this important for the shell?**  
+A: Because the shell can only list files and launch programs if the kernel can access storage.
+
+## Simple example
+
+Think of PCI as a hardware address book.
+
+- the bus is the street
+- the slot is the building
+- the function is the apartment
+- the PCI config space is the intercom that tells you who lives there
+
+## What this project does
+
+The PCI layer:
+
+- scans all buses and devices
+- reads vendor and device IDs
+- detects the E1000 network card
+- detects XHCI USB controllers
+
+The ATA layer:
+
+- initializes the primary master disk
+- reads sectors with PIO
+- writes sectors and flushes cache
+
+## Real code reference
+
+- `src/kernel/drivers/pci.c`
+- `src/kernel/drivers/ata.c`
+
+## Diagram
+
+```text
+PCI scan -> identify controller -> driver init -> storage reads/writes
+```
+
+## Small code map
+
+- `pci_config_read()` and `pci_config_write()` access PCI config space.
+- `pci_check_device()` identifies hardware and dispatches to the right driver.
+- `pci_init()` scans the whole machine.
+- `ata_init()` checks that a primary master exists.
+- `ata_read_sector()` and `ata_write_sector()` perform raw disk I/O.
+
+## Line by line sample
+
+```c
+address = (lbus << 16) | (lslot << 11) | (lfunc << 8) | (offset & 0xFC) | 0x80000000;
+```
+
+- build the PCI config address.
+- encode bus, device, function, and register offset.
+- set bit 31 to enable config access.
+
+```c
+outl(PCI_CONFIG_ADDRESS, address);
+return inl(PCI_CONFIG_DATA);
+```
+
+- write the address to the PCI config port.
+- read the selected register back from the data port.
+
+## What can go wrong
+
+- wrong PCI config address can read garbage
+- missing ATA readiness checks can hang the disk path
+- bad sector math can corrupt filesystem data
+
+## Practical takeaway
+
+PCI tells the kernel what hardware exists. ATA gives it a way to move file data on and off disk.
+
+## Line by line example
+
+```c
+address = (lbus << 16) | (lslot << 11) | (lfunc << 8) | (offset & 0xFC) | 0x80000000;
+```
+
+- build a PCI config address from bus, slot, function, and register offset.
+- set the enable bit so config space access works.
+
+```c
+outl(PCI_CONFIG_ADDRESS, address);
+return inl(PCI_CONFIG_DATA);
+```
+
+- send the address to the PCI config port.
+- read the selected register back.
+
+```c
+if (vendor_id == E1000_VENDOR_ID && device_id == E1000_DEVICE_ID) {
+    e1000_init(bus, device, function);
+}
+```
+
+- detect the Intel NIC and initialize the network driver.
+
+```c
+outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, ATA_CMD_READ_PIO);
+```
+
+- ask the disk controller to read one sector using PIO.
+
+```c
+if (status == 0) {
+    klog(LOG_INFO, "ATA", "No drive found.");
+}
+```
+
+- stop early if the disk controller does not respond.
