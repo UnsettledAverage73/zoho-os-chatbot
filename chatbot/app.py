@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import os
+import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,7 @@ def init_state() -> None:
         "model": DEFAULT_MODEL,
         "pinned_files": [],
         "chat_id": 1,
+        "history": [],
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -65,9 +67,24 @@ def init_state() -> None:
 
 
 def reset_chat() -> None:
+    if st.session_state.messages:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        st.session_state.history.append({
+            "id": st.session_state.chat_id,
+            "time": timestamp,
+            "summary": st.session_state.memory,
+            "messages": list(st.session_state.messages)
+        })
     st.session_state.messages = []
     st.session_state.memory = "No long-term memory yet."
     st.session_state.chat_id += 1
+
+
+def restore_chat(data: dict) -> None:
+    st.session_state.messages = data.get("messages", [])
+    st.session_state.memory = data.get("memory", "Restored session.")
+    st.session_state.chat_id = data.get("chat_id", st.session_state.chat_id + 1)
+    st.toast("Chat restored!")
 
 
 def mode_to_prompt(mode: str) -> str:
@@ -109,10 +126,10 @@ Latest turn:
 User: {user_text}
 Assistant: {assistant_text}
 
-Write a compact memory summary with:
+Write a compact memory summary (max 3 sentences) with:
 - user goal
-- files or subsystems already discussed
-- open questions or unresolved areas
+- files already discussed
+- unresolved areas
 """
     response = client.chat.completions.create(
         model=model,
@@ -143,38 +160,36 @@ def render_sidebar(index: RepoIndex) -> None:
         ["General Q&A", "Semantic analysis", "Code walkthrough", "Build / run help"],
         key="mode",
     )
-    st.sidebar.text_input("Model", key="model", help="Groq model name. Leave the default unless you need a different one.")
-    st.sidebar.multiselect(
-        "Pinned files",
-        options=index.file_paths,
-        key="pinned_files",
-        help="Add files that must stay in context even if the current question is broad.",
-    )
-    st.sidebar.button("New chat", on_click=reset_chat, use_container_width=True)
-    st.sidebar.caption("Tip: mention a file as `@file src/kernel/main.c` or `@src/kernel/main.c`.")
+    st.sidebar.text_input("Model", key="model")
+    st.sidebar.multiselect("Pinned files", options=index.file_paths, key="pinned_files")
+    
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        st.button("New chat", on_click=reset_chat, use_container_width=True)
+    with col2:
+        chat_data = {"messages": st.session_state.messages, "memory": st.session_state.memory, "chat_id": st.session_state.chat_id}
+        st.download_button("Export", data=json.dumps(chat_data, indent=2), file_name=f"chat_{datetime.now().strftime('%Y%m%d')}.json", mime="application/json", use_container_width=True)
 
-    with st.sidebar.expander("Project map", expanded=False):
-        st.markdown(
-            """
-            - `src/boot/main.asm`: bootstrap, CPU checks, paging, long mode
-            - `src/boot/long_mode_init.asm`: 64-bit handoff into `kmain()`
-            - `src/kernel/main.c`: subsystem initialization order
-            - `src/kernel/shell.c`: interactive shell and command handling
-            - `docs-site/docs/overview.mdx`: project overview and reading order
-            - `docs-site/docs/build-and-run.mdx`: build and run instructions
-            """
-        )
+    uploaded_file = st.sidebar.file_uploader("Restore", type=["json"])
+    if uploaded_file:
+        try:
+            data = json.load(uploaded_file)
+            if st.sidebar.button("Confirm Load"): restore_chat(data)
+        except Exception: st.sidebar.error("Invalid file")
+
+    st.sidebar.divider()
+    st.sidebar.subheader("Past Chats")
+    for item in reversed(st.session_state.history):
+        with st.sidebar.expander(f"Chat {item['id']} ({item['time']})"):
+            st.write(item["summary"])
+            if st.button("Load", key=f"load_{item['id']}"): restore_chat(item)
 
 
 def render_references(index: RepoIndex, user_text: str, pinned_files: list[str]) -> list[str]:
     refs = list(index.resolve_mentions(user_text))
     for path in pinned_files:
-        if path not in refs:
-            refs.append(path)
-
-    if not refs:
-        return []
-
+        if path not in refs: refs.append(path)
+    if not refs: return []
     st.subheader("Referenced files")
     for path in refs[:8]:
         st.markdown(f"**{path}**")
@@ -187,86 +202,40 @@ def main() -> None:
     init_state()
     index = get_index()
     client = get_groq_client()
-
     st.title(APP_TITLE)
-    st.caption("Ask how the OS is built, where subsystems live, or point to files with `@file path/to/file`.")
-
     render_sidebar(index)
 
     left, right = st.columns([2, 1], gap="large")
-
     with left:
-        if st.session_state.messages:
-            for message in st.session_state.messages:
-                with st.chat_message(message["role"]):
-                    st.markdown(message["content"])
-
-        user_text = st.chat_input("Ask about the repo, a subsystem, or a file...")
+        for m in st.session_state.messages:
+            with st.chat_message(m["role"]): st.markdown(m["content"])
+        user_text = st.chat_input("Ask about the repo...")
         if user_text:
             st.session_state.messages.append({"role": "user", "content": user_text})
+            st.rerun()
 
-            refs = render_references(index, user_text, st.session_state.pinned_files)
-            messages = build_messages(index, user_text, st.session_state.mode, refs, st.session_state.memory)
-            messages.extend(st.session_state.messages[-12:])
-
+    if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+        user_text = st.session_state.messages[-1]["content"]
+        refs = render_references(index, user_text, st.session_state.pinned_files)
+        msgs = build_messages(index, user_text, st.session_state.mode, refs, st.session_state.memory)
+        msgs.extend(st.session_state.messages[-10:])
+        with left:
             with st.chat_message("assistant"):
-                if client is None:
-                    answer = (
-                        "Groq API key is not configured. Set `GROQ_API_KEY` in your environment or "
-                        "in Streamlit secrets, then reload the app."
-                    )
-                    st.error(answer)
+                if not client: st.error("No API key")
                 else:
-                    with st.spinner("Thinking through the repo..."):
-                        response = client.chat.completions.create(
-                            model=st.session_state.model,
-                            messages=messages,
-                            temperature=0.2,
-                        )
-                        answer = response.choices[0].message.content.strip()
-                        st.markdown(answer)
-
-            st.session_state.messages.append({"role": "assistant", "content": answer})
-
-            if client is not None:
-                try:
-                    st.session_state.memory = update_memory(
-                        client,
-                        st.session_state.model,
-                        st.session_state.memory,
-                        user_text,
-                        answer,
-                    )
-                except Exception:
-                    pass
+                    with st.spinner("Thinking..."):
+                        resp = client.chat.completions.create(model=st.session_state.model, messages=msgs, temperature=0.2)
+                        ans = resp.choices[0].message.content.strip()
+                        st.markdown(ans)
+                        st.session_state.messages.append({"role": "assistant", "content": ans})
+                        st.session_state.memory = update_memory(client, st.session_state.model, st.session_state.memory, user_text, ans)
+                        st.rerun()
 
     with right:
         st.subheader("Memory")
-        st.write(st.session_state.memory)
-        st.subheader("Chat state")
-        st.write(f"Mode: {st.session_state.mode}")
+        st.info(st.session_state.memory)
+        st.subheader("Stats")
         st.write(f"Messages: {len(st.session_state.messages)}")
-        st.write(f"Pinned files: {len(st.session_state.pinned_files)}")
-        with st.expander("How to ask", expanded=False):
-            st.markdown(
-                """
-                - `@src/kernel/main.c` to force a file into context
-                - "Explain the boot chain"
-                - "Where is the shell command parsing?"
-                - "Show the build steps as commands"
-                """
-            )
-        with st.expander("Good file targets", expanded=False):
-            st.markdown(
-                """
-                - `src/boot/main.asm`
-                - `src/boot/long_mode_init.asm`
-                - `src/kernel/main.c`
-                - `src/kernel/shell.c`
-                - `docs-site/docs/overview.mdx`
-                - `docs-site/docs/build-and-run.mdx`
-                """
-            )
 
 
 if __name__ == "__main__":
