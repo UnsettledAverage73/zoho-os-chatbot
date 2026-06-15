@@ -19,7 +19,7 @@ cd /home/unsettledaverage73/zoho_os
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export GROQ_API_KEY='your_groq_key'
+export MISTRAL_API_KEY='your_mistral_key'
 streamlit run streamlit_app.py
 ```
 
@@ -30,4 +30,4 @@ The included `Dockerfile` is enough for Streamlit Cloud, Render, or any containe
 ## Notes
 
 - The app does not hardcode the API key.
-- Put the key in `GROQ_API_KEY` or `.streamlit/secrets.toml`.
+- Put the key in `MISTRAL_API_KEY` or `.streamlit/secrets.toml`.

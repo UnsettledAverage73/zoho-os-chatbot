@@ -28,3 +28,5 @@ docs-site/build/
 phase*
 .agents/
 .codex/
+__pycache__/
+*.pyc

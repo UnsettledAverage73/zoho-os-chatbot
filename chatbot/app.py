@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
-
-from groq import Groq
 
 try:
     from chatbot.repo_index import RepoIndex, load_repo_index
@@ -16,7 +17,8 @@ except ImportError:  # pragma: no cover - fallback for direct script execution
 
 
 APP_TITLE = "Zoho OS Repo Chat"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "mistral-large-latest"
+MISTRAL_CHAT_COMPLETIONS_URL = "https://api.mistral.ai/v1/chat/completions"
 
 
 SYSTEM_PROMPT = """You are a repository-aware assistant for the Zoho OS project.
@@ -40,15 +42,48 @@ def get_index() -> RepoIndex:
     return load_repo_index(get_repo_root())
 
 
-def get_groq_client() -> Groq | None:
+def get_mistral_api_key() -> str | None:
     key = (
-        st.secrets.get("GROQ_API_KEY")
-        if hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets
-        else os.getenv("GROQ_API_KEY")
+        st.secrets.get("MISTRAL_API_KEY")
+        if hasattr(st, "secrets") and "MISTRAL_API_KEY" in st.secrets
+        else os.getenv("MISTRAL_API_KEY")
     )
-    if not key:
-        return None
-    return Groq(api_key=key)
+    return key or None
+
+
+def call_mistral_chat_completions(api_key: str, model: str, messages: list[dict[str, str]], temperature: float) -> str:
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    request = urllib.request.Request(
+        MISTRAL_CHAT_COMPLETIONS_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            response_data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        error_body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        raise RuntimeError(f"Mistral API request failed ({exc.code}): {error_body or exc.reason}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Mistral API request failed: {exc.reason}") from exc
+
+    choices = response_data.get("choices", [])
+    if not choices:
+        raise RuntimeError("Mistral API response did not include any choices.")
+    message = choices[0].get("message", {})
+    content = message.get("content", "")
+    if not content:
+        raise RuntimeError("Mistral API response did not include assistant content.")
+    return content.strip()
 
 
 def init_state() -> None:
@@ -116,7 +151,7 @@ def search_mode_for(mode: str) -> str:
     return "general"
 
 
-def update_memory(client: Groq, model: str, previous: str, user_text: str, assistant_text: str) -> str:
+def update_memory(api_key: str, model: str, previous: str, user_text: str, assistant_text: str) -> str:
     prompt = f"""Update the memory summary for this ongoing repository chat.
 
 Current memory:
@@ -131,7 +166,8 @@ Write a compact memory summary (max 3 sentences) with:
 - files already discussed
 - unresolved areas
 """
-    response = client.chat.completions.create(
+    return call_mistral_chat_completions(
+        api_key=api_key,
         model=model,
         messages=[
             {"role": "system", "content": "You maintain compact memory summaries for a code assistant."},
@@ -139,7 +175,6 @@ Write a compact memory summary (max 3 sentences) with:
         ],
         temperature=0.2,
     )
-    return response.choices[0].message.content.strip()
 
 
 def build_messages(index: RepoIndex, user_text: str, mode: str, pinned_files: list[str], memory: str) -> list[dict[str, str]]:
@@ -201,7 +236,7 @@ def main() -> None:
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     init_state()
     index = get_index()
-    client = get_groq_client()
+    api_key = get_mistral_api_key()
     st.title(APP_TITLE)
     render_sidebar(index)
 
@@ -221,14 +256,18 @@ def main() -> None:
         msgs.extend(st.session_state.messages[-10:])
         with left:
             with st.chat_message("assistant"):
-                if not client: st.error("No API key")
+                if not api_key: st.error("No Mistral API key")
                 else:
                     with st.spinner("Thinking..."):
-                        resp = client.chat.completions.create(model=st.session_state.model, messages=msgs, temperature=0.2)
-                        ans = resp.choices[0].message.content.strip()
+                        ans = call_mistral_chat_completions(
+                            api_key=api_key,
+                            model=st.session_state.model,
+                            messages=msgs,
+                            temperature=0.2,
+                        )
                         st.markdown(ans)
                         st.session_state.messages.append({"role": "assistant", "content": ans})
-                        st.session_state.memory = update_memory(client, st.session_state.model, st.session_state.memory, user_text, ans)
+                        st.session_state.memory = update_memory(api_key, st.session_state.model, st.session_state.memory, user_text, ans)
                         st.rerun()
 
     with right:
